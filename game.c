@@ -73,6 +73,10 @@
 #define TILE_ITEM_R		0x46
 #define TILE_ITEM_BL	0x47
 #define TILE_ITEM_BR	0x48
+#define TILE_DROP		0x51
+#define TILE_DROP_R		0x52
+#define TILE_DROP_BL	0x53
+#define TILE_DROP_BR	0x54
 
 //number of levels in the game
 
@@ -183,7 +187,6 @@ const unsigned char updateListData[]={
 0x28,0x00,TILE_EMPTY,	//the level tile after an item is collected
 0x28,0x00,TILE_EMPTY,
 0x28,0x00,TILE_EMPTY,
-0x28,0x00,0x00,			//used to recolor enemy-dropped items
 0x20,0x4f,0x10,			//these three entires are used to display
 0x20,0x50,0x10,			//number of the collected items
 0x20,0x51,0x10,
@@ -291,7 +294,7 @@ static unsigned char bright;
 
 //update list
 
-static unsigned char update_list[8*3+1];
+static unsigned char update_list[7*3+1];
 
 
 
@@ -501,17 +504,6 @@ void set_block_update(unsigned int adr,unsigned char tl,unsigned char tr,unsigne
 	update_list[10]=update_list[7]+1;
 	update_list[11]=br;
 }
-
-
-
-void set_attr_update(unsigned int adr,unsigned char value)
-{
-	update_list[12]=adr>>8;
-	update_list[13]=adr&255;
-	update_list[14]=value;
-}
-
-
 
 //the main gameplay code
 
@@ -723,9 +715,7 @@ void game_loop(void)
 				{
 					map[ptr]=TILE_ITEM;
 					i16=NAMETABLE_A+0x0080+((py-2)<<6)|(px<<1);
-					set_block_update(i16,TILE_ITEM,TILE_ITEM_R,TILE_ITEM_BL,TILE_ITEM_BR);
-					i16=NAMETABLE_A+0x03c0+((py>>1)<<3)+(px>>1);
-					set_attr_update(i16,0xaa);
+					set_block_update(i16,TILE_DROP,TILE_DROP_R,TILE_DROP_BL,TILE_DROP_BR);
 					--drops_left;
 					drop_wait=64+(rand8()&63);
 				}
@@ -814,9 +804,9 @@ void game_loop(void)
 
 							//update number of collected items in the game stats
 
-							update_list[17]=0x10+items_collected/100;
-							update_list[20]=0x10+items_collected/10%10;
-							update_list[23]=0x10+items_collected%10;
+							update_list[14]=0x10+items_collected/100;
+							update_list[17]=0x10+items_collected/10%10;
+							update_list[20]=0x10+items_collected%10;
 						}
 					}
 				}
