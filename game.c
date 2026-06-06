@@ -70,13 +70,6 @@
 #define TILE_WALL		0x40
 #define TILE_EMPTY		0x44
 #define TILE_ITEM		0x45
-#define TILE_ITEM_R		0x46
-#define TILE_ITEM_BL	0x47
-#define TILE_ITEM_BR	0x48
-#define TILE_DROP		0x51
-#define TILE_DROP_R		0x52
-#define TILE_DROP_BL	0x53
-#define TILE_DROP_BR	0x54
 
 //number of levels in the game
 
@@ -273,8 +266,6 @@ static unsigned char player_wait [PLAYER_MAX];
 
 static unsigned char items_count;
 static unsigned char items_collected;
-static unsigned char drops_left;
-static unsigned char drop_wait;
 
 //game state variables
 
@@ -486,25 +477,6 @@ void put_num(unsigned int adr,unsigned int num,unsigned char len)
 
 
 
-//queue a 2x2 nametable block update through the existing update list
-
-void set_block_update(unsigned int adr,unsigned char tl,unsigned char tr,unsigned char bl,unsigned char br)
-{
-	update_list[0]=adr>>8;
-	update_list[1]=adr&255;
-	update_list[2]=tl;
-	update_list[3]=update_list[0];
-	update_list[4]=update_list[1]+1;
-	update_list[5]=tr;
-	adr+=32;
-	update_list[6]=adr>>8;
-	update_list[7]=adr&255;
-	update_list[8]=bl;
-	update_list[9]=update_list[6];
-	update_list[10]=update_list[7]+1;
-	update_list[11]=br;
-}
-
 //the main gameplay code
 
 void game_loop(void)
@@ -525,8 +497,6 @@ void game_loop(void)
 	player_all=0;
 	items_count=0;
 	items_collected=0;
-	drops_left=game_level+2;
-	drop_wait=64;
 
 	//this loop reads the level nametable back from VRAM, row by row,
 	//constructs game map, removes spawn points from the nametable,
@@ -576,8 +546,6 @@ void game_loop(void)
 
 		i16+=64;
 	}
-
-	items_count+=drops_left;
 
 	//setup update list
 
@@ -675,11 +643,9 @@ void game_loop(void)
 			if(!wait) music_play(MUSIC_GAME);//start the music when all the objects spawned
 		}
 
-		if(drop_wait) --drop_wait;
-
 		//check for level completion condition
 
-		if(items_collected==items_count&&!drops_left)
+		if(items_collected==items_count)
 		{
 			music_play(MUSIC_CLEAR);
 			game_done=TRUE;
@@ -704,26 +670,6 @@ void game_loop(void)
 			}
 
 			if(wait) continue; //don't process object movements if spawn animation is running
-
-			if(i&&drops_left&&!drop_wait)
-			{
-				px=player_x[i]>>(TILE_SIZE_BIT+FP_BITS);
-				py=player_y[i]>>(TILE_SIZE_BIT+FP_BITS);
-				ptr=MAP_ADR(px,py);
-
-				if(map[ptr]==TILE_EMPTY)
-				{
-					map[ptr]=TILE_ITEM;
-					i16=NAMETABLE_A+0x0080+((py-2)<<6)|(px<<1);
-					set_block_update(i16,TILE_DROP,TILE_DROP_R,TILE_DROP_BL,TILE_DROP_BR);
-					--drops_left;
-					drop_wait=64+(rand8()&63);
-				}
-				else
-				{
-					drop_wait=16;
-				}
-			}
 
 			//check collision of an enemy object with player object
 			//NOT logic is used here, check http://gendev.spritesmind.net/page-collide.html
@@ -799,8 +745,15 @@ void game_loop(void)
 
 							//replace it with empty tile through the update list
 
-							set_block_update(i16,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY);
-							drop_wait=4;
+							update_list[0]=i16>>8;
+							update_list[1]=i16&255;
+							update_list[3]=update_list[0];
+							update_list[4]=update_list[1]+1;
+							i16+=32;
+							update_list[6]=i16>>8;
+							update_list[7]=i16&255;
+							update_list[9]=update_list[6];
+							update_list[10]=update_list[7]+1;
 
 							//update number of collected items in the game stats
 
