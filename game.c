@@ -70,6 +70,10 @@
 #define TILE_WALL    0x40
 #define TILE_EMPTY    0x44
 #define TILE_ITEM    0x45
+#define TILE_ITEM_R    0x46
+#define TILE_ITEM_BL  0x47
+#define TILE_ITEM_BR  0x48
+#define TILE_POWERUP  0x55
 
 //number of levels in the game
 
@@ -116,7 +120,7 @@ const unsigned char palGame4[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x19,0x29,0x39,0x0f,
 /*{pal:"nes",layout:"nes"}*/
 const unsigned char palGame5[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x16,0x26,0x36,0x0f,0x07,0x27,0x38,0x0f,0x18,0x28,0x38 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGameSpr[16]={ 0x0f,0x17,0x27,0x30,0x0f,0x05,0x25,0x30,0x0f,0x11,0x21,0x30,0x0f,0x19,0x29,0x30 };
+const unsigned char palGameSpr[16]={ 0x0f,0x17,0x2c,0x30,0x0f,0x05,0x25,0x30,0x0f,0x11,0x21,0x30,0x0f,0x19,0x29,0x30 };
 /*{pal:"nes",layout:"nes"}*/
 const unsigned char palTitle[16]={ 0x0f,0x0f,0x0f,0x0f,0x0f,0x1c,0x2c,0x3c,0x0f,0x12,0x22,0x32,0x0f,0x14,0x24,0x34 };
 
@@ -266,6 +270,16 @@ static unsigned char player_wait [PLAYER_MAX];
 
 static unsigned char items_count;
 static unsigned char items_collected;
+static unsigned char drops_left;
+static unsigned char drop_wait;
+static unsigned char power_wait;
+static unsigned char power_ready;
+static unsigned char power_time;
+static unsigned char shot_on;
+static unsigned char shot_wait;
+static unsigned char shot_dir;
+static unsigned int shot_x;
+static unsigned int shot_y;
 
 //game state variables
 
@@ -475,6 +489,102 @@ void put_num(unsigned int adr,unsigned int num,unsigned char len)
   vram_put(0x10+num%10);
 }
 
+void set_block_update(unsigned int adr,unsigned char tl,unsigned char tr,unsigned char bl,unsigned char br)
+{
+  update_list[0]=adr>>8;
+  update_list[1]=adr&255;
+  update_list[2]=tl;
+  update_list[3]=update_list[0];
+  update_list[4]=update_list[1]+1;
+  update_list[5]=tr;
+  adr+=32;
+  update_list[6]=adr>>8;
+  update_list[7]=adr&255;
+  update_list[8]=bl;
+  update_list[9]=update_list[6];
+  update_list[10]=update_list[7]+1;
+  update_list[11]=br;
+}
+
+void put_chip_update(unsigned int adr)
+{
+  set_block_update(adr,TILE_ITEM,TILE_ITEM_R,TILE_ITEM_BL,TILE_ITEM_BR);
+}
+
+void clear_block_update(unsigned int adr)
+{
+  set_block_update(adr,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY);
+}
+
+void try_drop_at(unsigned char id,unsigned char power)
+{
+  px=player_x[id]>>(TILE_SIZE_BIT+FP_BITS);
+  py=player_y[id]>>(TILE_SIZE_BIT+FP_BITS);
+  ptr=MAP_ADR(px,py);
+
+  if(map[ptr]!=TILE_EMPTY) return;
+
+  map[ptr]=power?TILE_POWERUP:TILE_ITEM;
+  i16=NAMETABLE_A+0x0080+((py-2)<<6)|(px<<1);
+  put_chip_update(i16);
+
+  if(power)
+  {
+    power_ready=FALSE;
+  }
+  else
+  {
+    --drops_left;
+  }
+}
+
+void spawn_shot(void)
+{
+  shot_dir=player_dir[0];
+  if(shot_dir==DIR_NONE) shot_dir=DIR_RIGHT;
+
+  shot_x=player_x[0]+(4<<FP_BITS);
+  shot_y=player_y[0]+(4<<FP_BITS);
+  shot_on=TRUE;
+  shot_wait=24;
+}
+
+void move_shot(void)
+{
+  if(!shot_on) return;
+
+  switch(shot_dir)
+  {
+  case DIR_LEFT:  shot_x-=4<<FP_BITS; break;
+  case DIR_RIGHT: shot_x+=4<<FP_BITS; break;
+  case DIR_UP:    shot_y-=4<<FP_BITS; break;
+  case DIR_DOWN:  shot_y+=4<<FP_BITS; break;
+  }
+
+  px=shot_x>>(TILE_SIZE_BIT+FP_BITS);
+  py=shot_y>>(TILE_SIZE_BIT+FP_BITS);
+
+  if(px>=MAP_WDT||py<2||py>=MAP_HGT+2||map[MAP_ADR(px,py)]==TILE_WALL)
+  {
+    shot_on=FALSE;
+    return;
+  }
+
+  for(j=1;j<player_all;++j)
+  {
+    if(!((shot_x+(2<<FP_BITS))>=(player_x[j]+(14<<FP_BITS))||
+         (shot_x+(14<<FP_BITS))< (player_x[j]+(2 <<FP_BITS))||
+         (shot_y+(2<<FP_BITS))>=(player_y[j]+(14<<FP_BITS))||
+         (shot_y+(14<<FP_BITS))< (player_y[j]+(2 <<FP_BITS))))
+    {
+      player_wait[j]=96;
+      shot_on=FALSE;
+      sfx_play(SFX_RESPAWN2,1);
+      return;
+    }
+  }
+}
+
 
 
 //the main gameplay code
@@ -497,6 +607,13 @@ void game_loop(void)
   player_all=0;
   items_count=0;
   items_collected=0;
+  drops_left=game_level+2;
+  drop_wait=64;
+  power_wait=160;
+  power_ready=TRUE;
+  power_time=0;
+  shot_on=FALSE;
+  shot_wait=0;
 
   //this loop reads the level nametable back from VRAM, row by row,
   //constructs game map, removes spawn points from the nametable,
@@ -547,6 +664,8 @@ void game_loop(void)
     i16+=64;
   }
 
+  items_count+=drops_left;
+
   //setup update list
 
   memcpy(update_list,updateListData,sizeof(updateListData));
@@ -587,6 +706,11 @@ void game_loop(void)
 
       oam_meta_spr(player_x[i]>>FP_BITS,py,spr,sprListPlayer[i]);
       spr-=16;
+    }
+
+    if(shot_on)
+    {
+      oam_spr(shot_x>>FP_BITS,shot_y>>FP_BITS,TILE_ITEM,0,PLAYER_MAX<<4);
     }
 
     //wait for next frame
@@ -643,9 +767,17 @@ void game_loop(void)
       if(!wait) music_play(MUSIC_GAME);//start the music when all the objects spawned
     }
 
+    if(drop_wait) --drop_wait;
+    if(power_wait) --power_wait;
+    if(power_time) --power_time;
+    if(shot_wait) --shot_wait;
+
+    if(power_time&&!shot_on&&!shot_wait) spawn_shot();
+    move_shot();
+
     //check for level completion condition
 
-    if(items_collected==items_count)
+    if(items_collected==items_count&&!drops_left)
     {
       music_play(MUSIC_CLEAR);
       game_done=TRUE;
@@ -670,6 +802,18 @@ void game_loop(void)
       }
 
       if(wait) continue; //don't process object movements if spawn animation is running
+
+      if(i&&drops_left&&!drop_wait)
+      {
+        try_drop_at(i,FALSE);
+        drop_wait=48+(rand8()&63);
+      }
+
+      if(i&&power_ready&&!power_wait)
+      {
+        try_drop_at(i,TRUE);
+        power_wait=180;
+      }
 
       //check collision of an enemy object with player object
       //NOT logic is used here, check http://gendev.spritesmind.net/page-collide.html
@@ -731,12 +875,21 @@ void game_loop(void)
             i16=MAP_ADR((player_x[i]>>(TILE_SIZE_BIT+FP_BITS)),
                         (player_y[i]>>(TILE_SIZE_BIT+FP_BITS)));
 
-            if(map[i16]==TILE_ITEM)
+            if(map[i16]==TILE_ITEM||map[i16]==TILE_POWERUP)
             {
+              j=map[i16];
               map[i16]=TILE_EMPTY; //mark as collected in the game map
 
               sfx_play(SFX_ITEM,2);
-              ++items_collected;
+              if(j==TILE_POWERUP)
+              {
+                power_time=360;
+                shot_wait=8;
+              }
+              else
+              {
+                ++items_collected;
+              }
 
               //get address of the tile in the nametable
 
@@ -745,15 +898,7 @@ void game_loop(void)
 
               //replace it with empty tile through the update list
 
-              update_list[0]=i16>>8;
-              update_list[1]=i16&255;
-              update_list[3]=update_list[0];
-              update_list[4]=update_list[1]+1;
-              i16+=32;
-              update_list[6]=i16>>8;
-              update_list[7]=i16&255;
-              update_list[9]=update_list[6];
-              update_list[10]=update_list[7]+1;
+              clear_block_update(i16);
 
               //update number of collected items in the game stats
 
@@ -826,6 +971,7 @@ void game_loop(void)
         }
       }
     }
+
   }
 
   delay(100);
