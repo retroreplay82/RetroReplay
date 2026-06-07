@@ -1,3 +1,16 @@
+// v74: Skull Clear polish: screen flash, stronger blast sound, and 3-second slime vanish.
+// v66: dropped chips now exactly match the tiny map collectible shape, only palette-swapped.
+// v49: expands the 50-stage loop to cycle 10 physical layouts instead of 5.
+// v41: adds a GET READY 3-2-1 countdown before each level.
+// v40: adds a gameplay pause overlay with Retro-Replay.com.
+// v16 gameplay test: Frozen Disk + Lightning Disk power-ups.
+// Frozen Disk stops music, freezes slimes, and chimes once per second.
+// v61: A activates a held power-up, B gives a short movement speed boost capped at 2 tiles.
+// Lightning Disk auto-shoots cyan lightning bolts for about 5 seconds after A activation.
+// v20 removes unused PW HUD label and rebuilds level 2 inside safe visible borders.
+// v8 art fix: enemy slime now keeps the user's pointed slime/reference shape with mean black face.
+// Tiles 0x55-0x58 are now a floppy disk power-up instead of a compact disc.
+// Both sprite CHR banks use identical art; enemy bounce is handled by Y-position only.
 //Chase NES game by Shiru (shiru@mail.ru) 01'12
 //Feel free to do anything you want with this code, consider it Public Domain
 
@@ -30,6 +43,11 @@
 #include "level3_nam.h"
 #include "level4_nam.h"
 #include "level5_nam.h"
+#include "level6_nam.h"
+#include "level7_nam.h"
+#include "level8_nam.h"
+#include "level9_nam.h"
+#include "level10_nam.h"
 
 //game uses 12:4 fixed point calculations for enemy movements
 
@@ -70,14 +88,40 @@
 #define TILE_WALL    0x40
 #define TILE_EMPTY    0x44
 #define TILE_ITEM    0x45
-#define TILE_ITEM_R    0x46
-#define TILE_ITEM_BL  0x47
-#define TILE_ITEM_BR  0x48
-#define TILE_POWERUP  0x55
+#define TILE_DROP    0x51  // Pixel Panic: Code Chip sprite art starts here, 2x2 meta sprite
+#define TILE_ORB     0x55  // Pixel Panic: Frozen Disk power-up sprite art starts here, 2x2 metasprite
+#define TILE_LIGHTNING_ORB 0x5a  // Lightning Bolt power-up sprite art starts here, 2x2 metasprite
+#define TILE_SKULL_ORB     0x5e  // Skull Clear power-up sprite art starts here, 2x2 metasprite
+
+#define CHIP_MAX              8
+#define CODE_CHIP_BASE        3
+#define CODE_CHIP_DROP_CHANCE 2
+#define ORB_DROP_CHANCE       8   // debug-friendly: power-up appears quickly
+#define FREEZE_DISK_TIME     300  // about 5 seconds at 60 fps
+#define FREEZE_CHIME_PERIOD   60   // chime once per second while frozen
+#define LIGHTNING_TIME       300  // about 5 seconds at 60 fps
+#define LIGHTNING_SHOT_RATE   15  // auto-fire every quarter second
+#define SKULL_CLEAR_TIME    180  // about 3 seconds with no slimes on board
+#define DASH_BOOST_SPEED    (4<<FP_BITS)
+#define DASH_BOOST_TIME     60
+#define DASH_BOOST_MAX_TILES 2
+#define POWER_FREEZE           1
+#define POWER_LIGHTNING        2
+#define POWER_SKULL_CLEAR      3
+#define SHOT_MAX              3
+#define SHOT_SPEED            5
+#define SHOT_TILE             0x59
+
+#define SCORE_CART    1
+#define SCORE_CHIP    1
+#define SCORE_ORB     1
+#define SCORE_ENEMY   1
+#define SCORE_LEVEL   0
 
 //number of levels in the game
 
-#define LEVELS_ALL    5
+#define LEVEL_LAYOUTS  10
+#define LEVELS_ALL     50
 
 //numbers for screens that are displayed by the same function as the
 //level number
@@ -110,19 +154,33 @@
 //all the palettes are designed in NES Screen Tool, then copy/pasted here
 //with Palettes/Put C data to clipboard function
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGame1[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x1c,0x2c,0x3c,0x0f,0x09,0x27,0x38,0x0f,0x11,0x21,0x31 };
+const unsigned char palGame1[16]={ 0x0f,0x04,0x14,0x30,0x0f,0x11,0x21,0x30,0x0f,0x05,0x25,0x30,0x0f,0x19,0x29,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGame2[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x11,0x21,0x31,0x0f,0x07,0x27,0x38,0x0f,0x13,0x23,0x33 };
+const unsigned char palGame2[16]={ 0x0f,0x03,0x13,0x30,0x0f,0x12,0x22,0x30,0x0f,0x14,0x24,0x30,0x0f,0x19,0x29,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGame3[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x15,0x25,0x35,0x0f,0x05,0x27,0x38,0x0f,0x13,0x23,0x33 };
+const unsigned char palGame3[16]={ 0x0f,0x05,0x15,0x30,0x0f,0x11,0x21,0x30,0x0f,0x04,0x24,0x30,0x0f,0x1c,0x2c,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGame4[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x19,0x29,0x39,0x0f,0x0b,0x27,0x38,0x0f,0x17,0x27,0x37 };
+const unsigned char palGame4[16]={ 0x0f,0x02,0x12,0x30,0x0f,0x14,0x24,0x30,0x0f,0x11,0x21,0x30,0x0f,0x06,0x16,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGame5[16]={ 0x0f,0x11,0x32,0x30,0x0f,0x16,0x26,0x36,0x0f,0x07,0x27,0x38,0x0f,0x18,0x28,0x38 };
+const unsigned char palGame5[16]={ 0x0f,0x04,0x24,0x30,0x0f,0x05,0x25,0x30,0x0f,0x11,0x21,0x30,0x0f,0x19,0x29,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palGameSpr[16]={ 0x0f,0x17,0x2c,0x30,0x0f,0x05,0x25,0x30,0x0f,0x11,0x21,0x30,0x0f,0x19,0x29,0x30 };
+// v7 art fix: enemy slime is a pointed, classic slime silhouette with a mean black face.
+// Both sprite CHR banks use the same enemy art; movement comes from a tiny Y bob in code.
+// v6 art fix: enemy slime, Code Chips, and Frozen Disk are written identically into both sprite CHR banks.
+// The game swaps sprite banks for animation, so both banks must match or pickups/enemies visibly change shape.
+// v5 sprite art fix: stable slime silhouette, visible black face, no white pixels.
+// Sprite palette fix: enemy palettes use visible black for face details.
+// Enemy CHR tiles 0x4d-0x50 were also edited so transparent face holes
+// become real black pixels and the old white forehead shine is color 2.
+const unsigned char palGameSpr[16]={ 0x0f,0x14,0x2c,0x30,0x0f,0x0f,0x25,0x15,0x0f,0x0f,0x21,0x11,0x0f,0x0f,0x29,0x19 };
+
+// v40b pause palettes: make the playfield black and make pause text bright.
+// Sprite palette 0 is forced white for the tile-font text; slime palettes stay colored.
+const unsigned char palPauseBg[16]={ 0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f,0x0f };
+const unsigned char palPauseSpr[16]={ 0x0f,0x30,0x30,0x30,0x0f,0x05,0x25,0x30,0x0f,0x11,0x21,0x30,0x0f,0x19,0x29,0x30 };
 /*{pal:"nes",layout:"nes"}*/
-const unsigned char palTitle[16]={ 0x0f,0x0f,0x0f,0x0f,0x0f,0x1c,0x2c,0x3c,0x0f,0x12,0x22,0x32,0x0f,0x14,0x24,0x34 };
+//Retro Replay: Pixel Panic title palette - dark, purple, cyan, white
+const unsigned char palTitle[16]={ 0x0f,0x04,0x14,0x30,0x0f,0x11,0x21,0x30,0x0f,0x05,0x25,0x30,0x0f,0x13,0x23,0x30 };
 
 
 //metasprites
@@ -136,26 +194,75 @@ const unsigned char sprPlayer[]={
 };
 
 const unsigned char sprEnemy1[]={
-  0,-1,0x4d,1,
-  8,-1,0x4e,1,
-  0, 7,0x4f,1,
-  8, 7,0x50,1,
+  0, 0,0x4d,1,
+  8, 0,0x4e,1,
+  0, 8,0x4f,1,
+  8, 8,0x50,1,
   128
 };
 
 const unsigned char sprEnemy2[]={
-  0,-1,0x4d,2,
-  8,-1,0x4e,2,
-  0, 7,0x4f,2,
-  8, 7,0x50,2,
+  0, 0,0x4d,2,
+  8, 0,0x4e,2,
+  0, 8,0x4f,2,
+  8, 8,0x50,2,
   128
 };
 
 const unsigned char sprEnemy3[]={
-  0,-1,0x4d,3,
-  8,-1,0x4e,3,
-  0, 7,0x4f,3,
-  8, 7,0x50,3,
+  0, 0,0x4d,3,
+  8, 0,0x4e,3,
+  0, 8,0x4f,3,
+  8, 8,0x50,3,
+  128
+};
+
+//Sprite-based dropped item. It uses cleaned sprite copies of the
+//map collectible art (tiles 0x51-0x54). The floor/background pixels
+//are transparent, so the dropped item no longer discolors the maze.
+const unsigned char sprCodeChip[]={
+  0, 0,0x51,3,
+  8, 0,0x52,3,
+  0, 8,0x53,3,
+  8, 8,0x54,3,
+  128
+};
+
+//Dropped item uses one steady palette so it does not blink/change colors.
+//It still bobs in the draw code so it feels alive without tinting the floor.
+const unsigned char sprCodeChipGlow[]={
+  0, 0,0x51,3,
+  8, 0,0x52,3,
+  0, 8,0x53,3,
+  8, 8,0x54,3,
+  128
+};
+
+//Sprite-based Frozen Disk pickup.
+const unsigned char sprOrb[]={
+  0, 0,0x55,0,
+  8, 0,0x56,0,
+  0, 8,0x57,0,
+  8, 8,0x58,0,
+  128
+};
+
+//Sprite-based Lightning Disk pickup. Same floppy idea, but with a cyan bolt.
+const unsigned char sprLightningOrb[]={
+  0, 0,0x5a,0,
+  8, 0,0x5b,0,
+  0, 8,0x5c,0,
+  8, 8,0x5d,0,
+  128
+};
+
+//Sprite-based Skull Clear pickup. Grabbing it stores a skull power;
+//press A to banish all slimes from the board for a few seconds.
+const unsigned char sprSkullOrb[]={
+  0, 0,0x5e,0,
+  8, 0,0x5f,0,
+  0, 8,0x60,0,
+  8, 8,0x61,0,
   128
 };
 
@@ -168,12 +275,17 @@ const unsigned char* const sprListPlayer[]={ sprPlayer,sprEnemy1,sprEnemy2,sprEn
 //list of the levels, include pointer to the packed nametable of the level,
 //and pointer to the associated palette
 
-const unsigned char* const levelList[LEVELS_ALL*2]={
+const unsigned char* const levelList[LEVEL_LAYOUTS*2]={
 level1_nam,palGame1,
 level2_nam,palGame2,
 level3_nam,palGame3,
 level4_nam,palGame3,
-level5_nam,palGame3
+level5_nam,palGame3,
+level6_nam,palGame1,
+level7_nam,palGame2,
+level8_nam,palGame3,
+level9_nam,palGame4,
+level10_nam,palGame5
 };
 
 
@@ -181,12 +293,18 @@ level5_nam,palGame3
 
 const unsigned char updateListData[]={
 0x28,0x00,TILE_EMPTY,  //these four entries are used to clear
-0x28,0x00,TILE_EMPTY,  //the level tile after an item is collected
+0x28,0x00,TILE_EMPTY,  //the level tile after an item/orb/chip is collected
 0x28,0x00,TILE_EMPTY,
 0x28,0x00,TILE_EMPTY,
-0x20,0x4f,0x10,      //these three entires are used to display
-0x20,0x50,0x10,      //number of the collected items
-0x20,0x51,0x10,
+0x20,0x4d,0x10,      //SCORE digits on HUD line 1
+0x20,0x4e,0x10,
+0x20,0x4f,0x10,
+0x20,0x50,0x10,
+0x20,0x68,0x10,      //ITEMS collected digits on HUD line 2
+0x20,0x69,0x10,
+0x20,0x6a,0x10,
+0x20,0x76,0x00,      //POWER letter: F or L, blank when inactive
+0x20,0x77,0x00,      //POWER timer digit
 NT_UPD_EOF
 };
 
@@ -194,12 +312,19 @@ NT_UPD_EOF
 //a nametable string with the game stats, created in NES Screen Tool
 //and copy/pasted here with Shift+C
 
+//HUD line 1: "LV:0 SCORE:0000 LI:0       "
 const unsigned char statsStr[27]={
-  0x2c,0x25,0x36,0x25,0x2c,0x1a,0x00,0x00,0x27,
-  0x25,0x2d,0x33,0x1a,0x00,0x00,0x00,0x0f,0x00,
-  0x00,0x00,0x00,0x2c,0x29,0x36,0x25,0x33,0x1a
+  0x2c,0x36,0x1a,0x10,0x00,0x33,0x23,0x2f,0x32,
+  0x25,0x1a,0x10,0x10,0x10,0x10,0x00,0x2c,0x29,
+  0x1a,0x10,0x00,0x00,0x00,0x00,0x00,0x00,0x00
 };
 
+//HUD line 2: "ITEMS:000/000 POWER:--     "
+const unsigned char statsStr2[27]={
+  0x29,0x34,0x25,0x2d,0x33,0x1a,0x10,0x10,0x10,
+  0x0f,0x10,0x10,0x10,0x00,0x30,0x2f,0x37,0x25,
+  0x32,0x1a,0x00,0x00,0x00,0x00,0x00,0x00,0x00
+};
 
 //list of screens such as level number, game over, and well done
 //contains pointers to the packed nametables
@@ -209,6 +334,32 @@ const unsigned char* screenList[3]={ level_nam,gameover_nam,welldone_nam };
 //list of sub songs for corresponding screens
 
 const unsigned char screenMusicList[3]={MUSIC_LEVEL,MUSIC_GAME_OVER,MUSIC_WELL_DONE};
+
+//Level clear splash text, using the same built-in font tile mapping as the HUD.
+//0x00 is space, 0x21 is A, 0x22 is B, etc.
+const unsigned char levelClearStr[5]={0x23,0x2c,0x25,0x21,0x32}; //CLEAR
+const unsigned char nextLevelStr[10]={0x27,0x25,0x34,0x00,0x32,0x25,0x21,0x24,0x39,0x01}; //GET READY!
+const unsigned char clearScoreStr[6]={0x33,0x23,0x2f,0x32,0x25,0x00}; //SCORE 
+const unsigned char clearUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x00,0x32,0x25,0x30,0x2c,0x21,0x39,0x00,0x23,0x2f,0x2d}; //RETRO REPLAY COM
+
+//Game over score text. 0x00 is space, A=0x21, 0x0d is dash, 0x0e is dot.
+const unsigned char gameOverScoreStr[5]={0x33,0x23,0x2f,0x32,0x25}; //SCORE
+const unsigned char gameOverHighStr[4]={0x28,0x29,0x27,0x28}; //HIGH
+const unsigned char gameOverUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x0d,0x32,0x25,0x30,0x2c,0x21,0x39,0x0e,0x23,0x2f,0x2d}; //RETRO-REPLAY.COM
+
+//forward declaration used by game over / level clear score displays
+void put_num(unsigned int adr,unsigned int num,unsigned char len);
+void put_score_num(unsigned int adr,unsigned int num);
+
+// Pause overlay text, drawn with sprites so gameplay nametable stays untouched.
+// Uses the built-in tile font mapping: A=0x21, space=0x00, '-'=0x0d, '.'=0x0e.
+const unsigned char pauseStr[6]={0x30,0x21,0x35,0x33,0x25,0x24}; //PAUSED
+const unsigned char pauseResumeStr[14]={0x30,0x32,0x25,0x33,0x33,0x00,0x33,0x34,0x21,0x32,0x34,0x00,0x01,0x01}; //PRESS START!!
+const unsigned char pauseUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x0d,0x32,0x25,0x30,0x2c,0x21,0x39,0x0e,0x23,0x2f,0x2d}; //RETRO-REPLAY.COM
+
+// Title-screen level select text. Drawn with sprites so the title nametable
+// does not have to be rewritten while rendering is on.
+const unsigned char titleStageStr[6]={0x33,0x34,0x21,0x27,0x25,0x00}; //STAGE 
 
 //large 1-5 numbers nametable definitons, 2x3 tiles each
 //numbers were drawn one next to the other in NES Screen Tool,
@@ -223,6 +374,52 @@ const unsigned char largeNums[10*3]={
   0x86,0x7b,0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x7d,
   0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x7f,0x94,0x95
 };
+
+
+// v58: 3x5 block-digit font for true big level numbers 01-50.
+// Uses an existing blue LEVEL-screen tile so we do not need new CHR art.
+#define BIG_LEVEL_NUM_TILE 0x67
+const unsigned char bigLevelDigitBits[50]={
+  0x07,0x05,0x05,0x05,0x07, //0
+  0x02,0x06,0x02,0x02,0x07, //1
+  0x07,0x01,0x07,0x04,0x07, //2
+  0x07,0x01,0x07,0x01,0x07, //3
+  0x05,0x05,0x07,0x01,0x01, //4
+  0x07,0x04,0x07,0x01,0x07, //5
+  0x07,0x04,0x07,0x05,0x07, //6
+  0x07,0x01,0x01,0x01,0x01, //7
+  0x07,0x05,0x07,0x05,0x07, //8
+  0x07,0x05,0x07,0x01,0x07  //9
+};
+
+void put_big_level_num(unsigned int adr,unsigned char num)
+{
+  unsigned char tens,ones,row,col,bits,digit;
+
+  tens=num/10;
+  ones=num%10;
+
+  for(row=0;row<5;++row)
+  {
+    vram_adr(adr+((unsigned int)row<<5));
+
+    digit=tens;
+    bits=bigLevelDigitBits[digit*5+row];
+    for(col=0;col<3;++col)
+    {
+      vram_put(bits&(0x04>>col)?BIG_LEVEL_NUM_TILE:0x00);
+    }
+
+    vram_put(0x00);
+
+    digit=ones;
+    bits=bigLevelDigitBits[digit*5+row];
+    for(col=0;col<3;++col)
+    {
+      vram_put(bits&(0x04>>col)?BIG_LEVEL_NUM_TILE:0x00);
+    }
+  }
+}
 
 
 //array for game map, contains walls, empty spaces, and items
@@ -270,16 +467,66 @@ static unsigned char player_wait [PLAYER_MAX];
 
 static unsigned char items_count;
 static unsigned char items_collected;
-static unsigned char drops_left;
-static unsigned char drop_wait;
-static unsigned char power_wait;
-static unsigned char power_ready;
-static unsigned char power_time;
-static unsigned char shot_on;
-static unsigned char shot_wait;
-static unsigned char shot_dir;
-static unsigned int shot_x;
-static unsigned int shot_y;
+static unsigned char carts_count;
+static unsigned char chips_required;
+static unsigned char chips_spawned;
+static unsigned char chip_active[CHIP_MAX];
+static unsigned char chip_x[CHIP_MAX];
+static unsigned char chip_y[CHIP_MAX];
+static unsigned char orb_spawned;
+static unsigned char lightning_spawned;
+static unsigned char skull_spawned;
+static unsigned char orb_active;
+static unsigned char orb_type;
+static unsigned char orb_x;
+static unsigned char orb_y;
+static unsigned int  freeze_timer;
+static byte          freeze_chime_timer;
+static unsigned int  lightning_timer;
+static byte          lightning_shot_timer;
+
+// Keep the lightning shot arrays out of ZEROPAGE.
+// v16 overflowed the NES ZP segment by a few bytes; these do not need
+// zero-page speed, so moving them back to normal BSS fixes the build.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
+static unsigned char shot_active[SHOT_MAX];
+static unsigned char shot_x[SHOT_MAX];
+static unsigned char shot_y[SHOT_MAX];
+static unsigned char shot_dir[SHOT_MAX];
+#pragma data-name(pop)
+#pragma bss-name(pop)
+
+static unsigned int  game_score;
+
+// Keep the high score in normal RAM so it does not push ZEROPAGE over.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
+static unsigned int  high_score;
+#pragma data-name(pop)
+#pragma bss-name(pop)
+
+// v54: title-screen level select. Kept in normal RAM so we do not risk
+// another ZEROPAGE overflow. This is the stage the next game starts on.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
+static unsigned char start_level;
+#pragma data-name(pop)
+#pragma bss-name(pop)
+
+// v59/v60: held power-up and dash boost timer are kept in normal RAM to avoid ZP overflow.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
+static unsigned char held_power;
+static unsigned char dash_boost_timer;
+static unsigned char dash_boost_tiles;
+static unsigned int  skull_clear_timer;
+static unsigned char skull_flash_timer;
+#pragma data-name(pop)
+#pragma bss-name(pop)
+
+static unsigned int  enemy_spawn_x[PLAYER_MAX];
+static unsigned int  enemy_spawn_y[PLAYER_MAX];
 
 //game state variables
 
@@ -298,8 +545,13 @@ static unsigned char frame_cnt;
 static unsigned char bright;
 
 //update list
-
-static unsigned char update_list[7*3+1];
+// Keep this out of ZEROPAGE. The v17 HUD made the update list larger,
+// which overflowed the NES zero-page segment. Normal RAM is fine here.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
+static unsigned char update_list[13*3+1];
+#pragma data-name(pop)
+#pragma bss-name(pop)
 
 
 
@@ -328,11 +580,30 @@ void pal_fade_to(unsigned to)
 
 
 
+//draw a small sprite text string using the built-in font tiles
+
+unsigned char oam_text(unsigned char x,unsigned char y,const unsigned char* str,unsigned char len,unsigned char sprid,unsigned char attr)
+{
+  while(len)
+  {
+    if(*str) sprid=oam_spr(x,y,*str,attr,sprid);
+    x+=8;
+    ++str;
+    --len;
+  }
+
+  return sprid;
+}
+
+
+
 //show title screen
 
 void title_screen(void)
 {
-  scroll(-8,240);//title is aligned to the color attributes, so shift it a bit to the right
+  // v24: title art now fills the screen, so do not shift it right.
+  // This fixes the slightly clipped O in RETRO.
+  scroll(0,240);
 
   vram_adr(NAMETABLE_A);
   vram_unrle(title_nam);
@@ -341,8 +612,10 @@ void title_screen(void)
   vram_fill(0,1024);
 
   pal_bg(palTitle);
+  pal_spr(palGameSpr);
   pal_bright(4);
-  ppu_on_bg();
+  oam_clear();
+  ppu_on_all();
   delay(20);//delay just to make it look better
 
   iy=240<<FP_BITS;
@@ -355,10 +628,62 @@ void title_screen(void)
   {
     ppu_wait_frame();
 
-    scroll(-8,iy>>FP_BITS);
+    scroll(0,iy>>FP_BITS);
 
-    if(pad_trigger(0)&PAD_START) break;
+    // Little title-screen parade: the horn guy runs across with slimes chasing.
+    // v27 safe title fix: keep the known-working title tiles, but move the parade lower
+    // so the sprites do not walk through the words.
+    spr=0;
+    i=frame_cnt<<1;
+    py=198+((frame_cnt&8)>>3);
+    spr=oam_meta_spr(i,py,spr,sprPlayer);
+    spr=oam_meta_spr(i-44,py+1,spr,sprEnemy1);
+    spr=oam_meta_spr(i-78,py+2,spr,sprEnemy2);
+    spr=oam_meta_spr(i-112,py+1,spr,sprEnemy3);
 
+    // v54 debug/convenience level select on the title screen.
+    // LEFT/RIGHT changes one stage, UP/DOWN changes ten stages, SELECT resets.
+    // START begins on the displayed stage.
+    spr=oam_text(84,216,titleStageStr,6,spr,0);
+    spr=oam_spr(132,216,0x10+(start_level+1)/10,0,spr);
+    spr=oam_spr(140,216,0x10+(start_level+1)%10,0,spr);
+    oam_hide_rest(spr);
+
+    ptr=pad_trigger(0);
+
+    if(ptr&PAD_RIGHT)
+    {
+      if(start_level+1<LEVELS_ALL) ++start_level; else start_level=0;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_LEFT)
+    {
+      if(start_level) --start_level; else start_level=LEVELS_ALL-1;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_UP)
+    {
+      if(start_level+10<LEVELS_ALL) start_level+=10; else start_level=LEVELS_ALL-1;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_DOWN)
+    {
+      if(start_level>=10) start_level-=10; else start_level=0;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_SELECT)
+    {
+      start_level=0;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_START) break;
+
+    ++frame_cnt;
     iy+=dy;
 
     if(iy<0)
@@ -376,11 +701,10 @@ void title_screen(void)
     else
     {
       pal_col(2,(frame_cnt&32)?0x0f:0x20);//blinking press start text
-      ++frame_cnt;
     }
   }
 
-  scroll(-8,0);//if start is pressed, show the title at whole
+  scroll(0,0);//if start is pressed, show the title at whole
   sfx_play(SFX_START,0);
 
   for(i=0;i<16;++i)//and blink the text faster
@@ -405,19 +729,29 @@ void show_screen(unsigned char num)
   vram_adr(NAMETABLE_A);
   vram_unrle(screenList[spr]);
 
-  if(!spr)//if it is the level screen, print large number
+  if(!spr)//if it is the level screen, print the real level number big
   {
-    j=num<<1;
-    i16=0x2194;//position of the number in the nametable
+    // v58: remove the little STAGE line, but keep the level number big.
+    // This draws 01-50 as chunky 3x5 block digits beside LEVEL.
+    put_big_level_num(NAMETABLE_A+0x0194,num+1);
+  }
 
-    for(i=0;i<3;++i)
-    {
-      vram_adr(i16);
-      vram_put(largeNums[j]);
-      vram_put(largeNums[j+1]);
-      j+=10;
-      i16+=32;
-    }
+  //Retro Replay: add final score/high score to the Game Over screen.
+  //This keeps high score session-based, like an arcade/NES test build.
+  if(num==SCREEN_GAMEOVER)
+  {
+    if(game_score>high_score) high_score=game_score;
+
+    vram_adr(NAMETABLE_A+0x0228);
+    vram_write((unsigned char*)gameOverScoreStr,5);
+    put_score_num(NAMETABLE_A+0x022f,game_score);
+
+    vram_adr(NAMETABLE_A+0x0269);
+    vram_write((unsigned char*)gameOverHighStr,4);
+    put_score_num(NAMETABLE_A+0x026f,high_score);
+
+    vram_adr(NAMETABLE_A+0x02ca);
+    vram_write((unsigned char*)gameOverUrlStr,16);
   }
 
   i16=(num==SCREEN_GAMEOVER)?0x1525:0x1121;//two colors for flashing text in LSB and MSB
@@ -455,6 +789,139 @@ void show_screen(unsigned char num)
 
 
 
+//show a quick level clear splash before the next level
+
+void show_level_clear(unsigned char num)
+{
+  scroll(-4,0); //match the level intro screen alignment
+  ppu_off();
+  oam_clear();
+
+  vram_adr(NAMETABLE_A);
+  vram_unrle(level_nam);
+
+  // v58: show the true level number big on the LEVEL CLEAR screen.
+  put_big_level_num(NAMETABLE_A+0x0194,num+1);
+
+  //Move CLEAR down so it no longer sits inside the big LEVEL letters.
+  vram_adr(NAMETABLE_A+0x022d);
+  vram_write((unsigned char*)levelClearStr,5);
+
+  //Show current score on the splash.
+  vram_adr(NAMETABLE_A+0x026a);
+  vram_write((unsigned char*)clearScoreStr,6);
+  put_score_num(NAMETABLE_A+0x0270,game_score);
+
+  if(num+1<LEVELS_ALL)
+  {
+    vram_adr(NAMETABLE_A+0x02ab);
+    vram_write((unsigned char*)nextLevelStr,10);
+  }
+
+  //Small Retro Replay mark near the bottom, high enough to avoid clipping.
+  vram_adr(NAMETABLE_A+0x0328);
+  vram_write((unsigned char*)clearUrlStr,16);
+
+  pal_col(2,0x21);
+  pal_col(3,0x30);
+  pal_col(6,0x30);
+  pal_bg(palGame1);
+  pal_spr(palGameSpr);
+  ppu_on_all();
+
+  pal_fade_to(4);
+  music_play(MUSIC_CLEAR);
+
+  //Quick parade during the same short wait: horn guy and slimes sprint by.
+  frame_cnt=0;
+  while(frame_cnt<96)
+  {
+    ppu_wait_frame();
+
+    //Flash the blue text color a little so the score/splash feels alive.
+    pal_col(2,(frame_cnt&8)?0x21:0x11);
+
+    spr=0;
+    i=(frame_cnt<<2);
+    py=196+((frame_cnt&4)>>2);
+    spr=oam_meta_spr(i,py,spr,sprPlayer);
+    spr=oam_meta_spr(i-34,py+1,spr,sprEnemy1);
+    spr=oam_meta_spr(i-60,py+2,spr,sprEnemy2);
+    spr=oam_meta_spr(i-86,py+1,spr,sprEnemy3);
+    oam_hide_rest(spr);
+
+    ++frame_cnt;
+  }
+
+  pal_fade_to(0);
+}
+
+
+
+//show a short GET READY 3-2-1 countdown before gameplay starts
+//Uses the same large number tile set as the level intro screen.
+void show_ready_countdown(void)
+{
+  scroll(-4,0); //match the level intro alignment
+
+  //Play a small count-in on a clean black screen so the message is readable.
+  for(wait=3;wait>0;--wait)
+  {
+    ppu_off();
+    oam_clear();
+
+    vram_adr(NAMETABLE_A);
+    vram_fill(0,1024);
+
+    //GET READY!
+    vram_adr(NAMETABLE_A+0x00ea);
+    vram_write((unsigned char*)nextLevelStr,10);
+
+    //large countdown number centered below it
+    j=(wait-1)<<1;
+    i16=NAMETABLE_A+0x014f;
+    for(i=0;i<3;++i)
+    {
+      vram_adr(i16);
+      vram_put(largeNums[j]);
+      vram_put(largeNums[j+1]);
+      j+=10;
+      i16+=32;
+    }
+
+    //small brand mark at the bottom
+    vram_adr(NAMETABLE_A+0x0328);
+    vram_write((unsigned char*)pauseUrlStr,16);
+
+    pal_bg(palGame1);
+    pal_spr(palGameSpr);
+    pal_col(2,0x21);
+    pal_col(3,0x30);
+    ppu_on_all();
+    pal_bright(4);
+
+    sfx_play(SFX_START,0);
+    delay(45);
+  }
+
+  //Tiny GO flash so the transition feels responsive, but keeps the countdown short.
+  ppu_off();
+  vram_adr(NAMETABLE_A);
+  vram_fill(0,1024);
+  vram_adr(NAMETABLE_A+0x01cd);
+  vram_put(0x27); //G
+  vram_put(0x2f); //O
+  vram_put(0x01); //!
+  vram_adr(NAMETABLE_A+0x0328);
+  vram_write((unsigned char*)pauseUrlStr,16);
+  ppu_on_all();
+  sfx_play(SFX_START,0);
+  delay(20);
+
+  pal_fade_to(0);
+}
+
+
 //set up a move in the specified direction if there is no wall
 
 void player_move(unsigned char id,unsigned char dir)
@@ -469,6 +936,10 @@ void player_move(unsigned char id,unsigned char dir)
   case DIR_UP:    --py; break;
   case DIR_DOWN:  ++py; break;
   }
+
+  //v20 safety clamp: never allow the player/enemies to step outside
+  //the 16 x 13 gameplay map, even if a level border tile is wrong.
+  if(px>=MAP_WDT || py<2 || py>=MAP_HGT+2) return;
 
   if(map[MAP_ADR(px,py)]==TILE_WALL) return;
 
@@ -489,100 +960,288 @@ void put_num(unsigned int adr,unsigned int num,unsigned char len)
   vram_put(0x10+num%10);
 }
 
-void set_block_update(unsigned int adr,unsigned char tl,unsigned char tr,unsigned char bl,unsigned char br)
+//print a 4 digit score directly into VRAM during setup
+void put_score_num(unsigned int adr,unsigned int num)
 {
-  update_list[0]=adr>>8;
-  update_list[1]=adr&255;
-  update_list[2]=tl;
-  update_list[3]=update_list[0];
-  update_list[4]=update_list[1]+1;
-  update_list[5]=tr;
-  adr+=32;
-  update_list[6]=adr>>8;
-  update_list[7]=adr&255;
-  update_list[8]=bl;
-  update_list[9]=update_list[6];
-  update_list[10]=update_list[7]+1;
-  update_list[11]=br;
+  vram_adr(adr);
+
+  vram_put(0x10+num/1000);
+  vram_put(0x10+num/100%10);
+  vram_put(0x10+num/10%10);
+  vram_put(0x10+num%10);
 }
 
-void put_chip_update(unsigned int adr)
+//refresh SCORE digits in the always-active VRAM update list
+void refresh_score_hud(void)
 {
-  set_block_update(adr,TILE_ITEM,TILE_ITEM_R,TILE_ITEM_BL,TILE_ITEM_BR);
+  update_list[14]=0x10+game_score/1000;
+  update_list[17]=0x10+game_score/100%10;
+  update_list[20]=0x10+game_score/10%10;
+  update_list[23]=0x10+game_score%10;
 }
 
-void clear_block_update(unsigned int adr)
+//refresh collected item count in the HUD
+void refresh_items_hud(void)
 {
-  set_block_update(adr,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY,TILE_EMPTY);
+  update_list[26]=0x10+items_collected/100;
+  update_list[29]=0x10+items_collected/10%10;
+  update_list[32]=0x10+items_collected%10;
 }
 
-void try_drop_at(unsigned char id,unsigned char power)
+//show active power-up and seconds remaining on the HUD
+void refresh_power_hud(void)
 {
-  px=player_x[id]>>(TILE_SIZE_BIT+FP_BITS);
-  py=player_y[id]>>(TILE_SIZE_BIT+FP_BITS);
-  ptr=MAP_ADR(px,py);
-
-  if(map[ptr]!=TILE_EMPTY) return;
-
-  map[ptr]=power?TILE_POWERUP:TILE_ITEM;
-  i16=NAMETABLE_A+0x0080+((py-2)<<6)|(px<<1);
-  put_chip_update(i16);
-
-  if(power)
+  if(freeze_timer)
   {
-    power_ready=FALSE;
+    update_list[35]=0x26; //F
+    update_list[38]=0x10+((freeze_timer+59)/60);
+  }
+  else if(lightning_timer)
+  {
+    update_list[35]=0x2c; //L
+    update_list[38]=0x10+((lightning_timer+59)/60);
+  }
+  else if(skull_clear_timer)
+  {
+    update_list[35]=0x33; //S for Skull Clear
+    update_list[38]=0x10+((skull_clear_timer+59)/60);
+  }
+  else if(held_power)
+  {
+    if(held_power==POWER_LIGHTNING) update_list[35]=0x2c; //L
+    else if(held_power==POWER_SKULL_CLEAR) update_list[35]=0x33; //S
+    else update_list[35]=0x26; //F
+    update_list[38]=0x00;
   }
   else
   {
-    --drops_left;
+    update_list[35]=0x00;
+    update_list[38]=0x00;
   }
 }
 
-void spawn_shot(void)
-{
-  shot_dir=player_dir[0];
-  if(shot_dir==DIR_NONE) shot_dir=DIR_RIGHT;
 
-  shot_x=player_x[0]+(4<<FP_BITS);
-  shot_y=player_y[0]+(4<<FP_BITS);
-  shot_on=TRUE;
-  shot_wait=24;
+//queue a 16x16 background tile update at a map position
+void queue_meta_tile(unsigned int adr,unsigned char tile)
+{
+  update_list[0]=adr>>8;
+  update_list[1]=adr&255;
+  update_list[3]=update_list[0];
+  update_list[4]=update_list[1]+1;
+  adr+=32;
+  update_list[6]=adr>>8;
+  update_list[7]=adr&255;
+  update_list[9]=update_list[6];
+  update_list[10]=update_list[7]+1;
+
+  if(tile==TILE_EMPTY)
+  {
+    update_list[2]=TILE_EMPTY;
+    update_list[5]=TILE_EMPTY;
+    update_list[8]=TILE_EMPTY;
+    update_list[11]=TILE_EMPTY;
+  }
+  else
+  {
+    update_list[2]=tile;
+    update_list[5]=tile+1;
+    update_list[8]=tile+2;
+    update_list[11]=tile+3;
+  }
 }
 
-void move_shot(void)
+//convert a map index back into a nametable address
+unsigned int map_index_to_nt(unsigned int idx)
 {
-  if(!shot_on) return;
+  return NAMETABLE_A+0x0080+((idx>>MAP_WDT_BIT)<<6)+((idx&(MAP_WDT-1))<<1);
+}
 
-  switch(shot_dir)
+//true if a sprite Code Chip is already sitting on this map tile
+unsigned char chip_at_index(unsigned int idx)
+{
+  px=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  py=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+
+  for(ptr=0;ptr<CHIP_MAX;++ptr)
   {
-  case DIR_LEFT:  shot_x-=4<<FP_BITS; break;
-  case DIR_RIGHT: shot_x+=4<<FP_BITS; break;
-  case DIR_UP:    shot_y-=4<<FP_BITS; break;
-  case DIR_DOWN:  shot_y+=4<<FP_BITS; break;
+    if(chip_active[ptr]&&chip_x[ptr]==px&&chip_y[ptr]==py) return TRUE;
   }
 
-  px=shot_x>>(TILE_SIZE_BIT+FP_BITS);
-  py=shot_y>>(TILE_SIZE_BIT+FP_BITS);
+  return FALSE;
+}
 
-  if(px>=MAP_WDT||py<2||py>=MAP_HGT+2||map[MAP_ADR(px,py)]==TILE_WALL)
-  {
-    shot_on=FALSE;
-    return;
-  }
+//spawn a sprite Code Chip at a map tile. The map/background tile is forced
+//back to empty so only the chip sprite changes color or glows.
+void spawn_code_chip(unsigned int idx)
+{
+  if(chip_at_index(idx)) return;
 
-  for(j=1;j<player_all;++j)
+  for(ptr=0;ptr<CHIP_MAX;++ptr)
   {
-    if(!((shot_x+(2<<FP_BITS))>=(player_x[j]+(14<<FP_BITS))||
-         (shot_x+(14<<FP_BITS))< (player_x[j]+(2 <<FP_BITS))||
-         (shot_y+(2<<FP_BITS))>=(player_y[j]+(14<<FP_BITS))||
-         (shot_y+(14<<FP_BITS))< (player_y[j]+(2 <<FP_BITS))))
+    if(!chip_active[ptr])
     {
-      player_wait[j]=96;
-      shot_on=FALSE;
-      sfx_play(SFX_RESPAWN2,1);
+      map[idx]=TILE_EMPTY;
+      queue_meta_tile(map_index_to_nt(idx),TILE_EMPTY);
+      chip_active[ptr]=TRUE;
+      chip_x[ptr]=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+      chip_y[ptr]=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+      ++chips_spawned;
       return;
     }
   }
+}
+
+
+//true if the sprite Frozen Disk power-up is sitting on this map tile
+unsigned char orb_at_index(unsigned int idx)
+{
+  px=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  py=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+
+  if(orb_active&&orb_x==px&&orb_y==py) return TRUE;
+
+  return FALSE;
+}
+
+//spawn the Frozen Disk as a sprite pickup instead of a background tile.
+//This prevents ugly solid black square backgrounds.
+void spawn_orb(unsigned int idx)
+{
+  if(orb_active) return;
+
+  orb_active=TRUE;
+  orb_type=POWER_FREEZE;
+  orb_x=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  orb_y=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+}
+
+void spawn_lightning_orb(unsigned int idx)
+{
+  if(orb_active) return;
+
+  orb_active=TRUE;
+  orb_type=POWER_LIGHTNING;
+  orb_x=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  orb_y=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+}
+
+void spawn_skull_orb(unsigned int idx)
+{
+  if(orb_active) return;
+
+  orb_active=TRUE;
+  orb_type=POWER_SKULL_CLEAR;
+  orb_x=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  orb_y=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+}
+
+void activate_skull_clear(void)
+{
+  skull_clear_timer=SKULL_CLEAR_TIME;
+  skull_flash_timer=24;
+
+  //Banish every slime off-screen for the whole clear window, then let
+  //the normal spawn animation bring them back. This makes the board
+  //visibly empty for about 3 seconds without touching the map logic.
+  for(ptr=1;ptr<player_all;++ptr)
+  {
+    player_x[ptr]=enemy_spawn_x[ptr];
+    player_y[ptr]=enemy_spawn_y[ptr];
+    player_cnt[ptr]=0;
+    player_dir[ptr]=DIR_NONE;
+    player_wait[ptr]=SKULL_CLEAR_TIME;
+  }
+
+  //Layer two existing effects together for a stronger laser/blast hit.
+  sfx_play(SFX_START,0);
+  sfx_play(SFX_RESPAWN2,1);
+}
+
+//start one small Frozen Disk shot in the player's current direction.
+//Returns TRUE only when a shot slot was actually created.
+unsigned char spawn_shot(void)
+{
+  j=player_dir[0];
+  if(!j) j=DIR_RIGHT;
+
+  for(ptr=0;ptr<SHOT_MAX;++ptr)
+  {
+    if(!shot_active[ptr])
+    {
+      shot_active[ptr]=TRUE;
+      shot_x[ptr]=(player_x[0]>>FP_BITS)+4;
+      shot_y[ptr]=(player_y[0]>>FP_BITS)+4;
+      shot_dir[ptr]=j;
+      return TRUE;
+    }
+  }
+
+  return FALSE;
+}
+
+//move Frozen Disk shots and remove them when they hit a wall or leave the map
+void update_shots(void)
+{
+  for(ptr=0;ptr<SHOT_MAX;++ptr)
+  {
+    if(shot_active[ptr])
+    {
+      //Do not allow unsigned wraparound. When a shot leaves the playfield,
+      //it disappears instead of reappearing on the opposite side.
+      switch(shot_dir[ptr])
+      {
+      case DIR_RIGHT:
+        if(shot_x[ptr]>=(MAP_WDT*TILE_SIZE-8)) { shot_active[ptr]=FALSE; break; }
+        shot_x[ptr]+=SHOT_SPEED;
+        break;
+      case DIR_LEFT:
+        if(shot_x[ptr]<SHOT_SPEED) { shot_active[ptr]=FALSE; break; }
+        shot_x[ptr]-=SHOT_SPEED;
+        break;
+      case DIR_DOWN:
+        if(shot_y[ptr]>=((MAP_HGT+2)*TILE_SIZE-8)) { shot_active[ptr]=FALSE; break; }
+        shot_y[ptr]+=SHOT_SPEED;
+        break;
+      case DIR_UP:
+        if(shot_y[ptr]<(2*TILE_SIZE+SHOT_SPEED)) { shot_active[ptr]=FALSE; break; }
+        shot_y[ptr]-=SHOT_SPEED;
+        break;
+      }
+
+      if(shot_active[ptr])
+      {
+        px=shot_x[ptr]>>TILE_SIZE_BIT;
+        py=(shot_y[ptr]>>TILE_SIZE_BIT)-2;
+
+        if(px>=MAP_WDT||py>=MAP_HGT||map[MAP_ADR(px,py)]==TILE_WALL)
+        {
+          shot_active[ptr]=FALSE;
+        }
+      }
+    }
+  }
+}
+
+//add score and refresh SCORE digits in the VRAM update list
+void add_score(unsigned int points)
+{
+  game_score+=points;
+  if(game_score>9999) game_score=9999;
+  if(game_score>high_score) high_score=game_score;
+  refresh_score_hud();
+}
+
+
+//Draw a short tile-font string as sprites.
+//This lets the pause screen appear over the frozen game without touching VRAM.
+unsigned char draw_oam_text(unsigned char x,unsigned char y,const unsigned char* text,unsigned char len,unsigned char attr,unsigned char sprid)
+{
+  for(ptr=0;ptr<len;++ptr)
+  {
+    if(text[ptr]) sprid=oam_spr(x,y,text[ptr],attr,sprid);
+    x+=8;
+  }
+  return sprid;
 }
 
 
@@ -593,13 +1252,17 @@ void game_loop(void)
 {
   oam_clear();
 
-  i=game_level<<1;
+  // v49: 50 stages use 10 physical layouts in rotation.
+  // This gives more variety without huge nametable growth.
+  i=(game_level%LEVEL_LAYOUTS)<<1;
 
   vram_adr(NAMETABLE_A);
   vram_unrle(levelList[i]);          //unpack level nametable
 
   vram_adr(NAMETABLE_A+0x0042);
-  vram_write((unsigned char*)statsStr,27);   //add game stats string
+  vram_write((unsigned char*)statsStr,27);   //add HUD line 1
+  vram_adr(NAMETABLE_A+0x0062);
+  vram_write((unsigned char*)statsStr2,27);  //add HUD line 2
 
   pal_bg(levelList[i+1]);             //set up background palette
   pal_spr(palGameSpr);               //set up sprites palette
@@ -607,13 +1270,25 @@ void game_loop(void)
   player_all=0;
   items_count=0;
   items_collected=0;
-  drops_left=game_level+2;
-  drop_wait=64;
-  power_wait=160;
-  power_ready=TRUE;
-  power_time=0;
-  shot_on=FALSE;
-  shot_wait=0;
+  carts_count=0;
+  chips_required=0;
+  chips_spawned=0;
+  for(i=0;i<CHIP_MAX;++i) chip_active[i]=FALSE;
+  for(i=0;i<SHOT_MAX;++i) shot_active[i]=FALSE;
+  orb_spawned=0;
+  lightning_spawned=0;
+  skull_spawned=0;
+  orb_active=FALSE;
+  orb_type=0;
+  freeze_timer=0;
+  freeze_chime_timer=0;
+  lightning_timer=0;
+  lightning_shot_timer=0;
+  skull_clear_timer=0;
+  skull_flash_timer=0;
+  held_power=0;
+  dash_boost_timer=0;
+  dash_boost_tiles=0;
 
   //this loop reads the level nametable back from VRAM, row by row,
   //constructs game map, removes spawn points from the nametable,
@@ -642,9 +1317,13 @@ void game_loop(void)
         player_dir  [player_all]=DIR_NONE;
         player_x    [player_all]=(j<<3)<<FP_BITS;
         player_y    [player_all]=(i<<4)<<FP_BITS;
+        enemy_spawn_x[player_all]=player_x[player_all];
+        enemy_spawn_y[player_all]=player_y[player_all];
         player_cnt  [player_all]=0;
         player_wait [player_all]=16+((spr-TILE_PLAYER)<<4);
         player_speed[player_all]=(spr==TILE_PLAYER)?2<<FP_BITS:10+((spr-TILE_ENEMY1)<<1);
+        // v43: small difficulty climb every 10 stages, without changing maps.
+        if(spr!=TILE_PLAYER) player_speed[player_all]+=(game_level/10);
         ++player_all;
         wait+=16;
         spr=TILE_EMPTY;
@@ -664,7 +1343,14 @@ void game_loop(void)
     i16+=64;
   }
 
-  items_count+=drops_left;
+  //Pixel Panic: after all starting cartridges are recovered, enemies
+  //drop required Code Chips. These are added to the objective total now,
+  //but they are spawned during play.
+  carts_count=items_count;
+  // v43: cap chip requirements so the 50-stage loop stays possible.
+  // It cycles 3-8 required Code Chips instead of growing past CHIP_MAX.
+  chips_required=CODE_CHIP_BASE+(game_level%6);
+  items_count+=chips_required;
 
   //setup update list
 
@@ -674,10 +1360,14 @@ void game_loop(void)
 
   //put constant game stats numbers, that aren't updated during level
 
-  put_num(NAMETABLE_A+0x0048,game_level+1,1);
-  put_num(NAMETABLE_A+0x0053,items_count,3);
-  put_num(NAMETABLE_A+0x005d,game_lives-1,1);
-
+  put_num(NAMETABLE_A+0x0045,game_level+1,2);
+  put_score_num(NAMETABLE_A+0x004d,game_score);
+  put_num(NAMETABLE_A+0x0055,game_lives-1,1);
+  put_num(NAMETABLE_A+0x0068,items_collected,3);
+  put_num(NAMETABLE_A+0x006c,items_count,3);
+  refresh_score_hud();
+  refresh_items_hud();
+  refresh_power_hud();
   //enable display
 
   ppu_on_all();
@@ -693,24 +1383,72 @@ void game_loop(void)
   {
     //construct OAM from object parameters
 
-    spr=(player_all-1)<<4;
-
-    for(i=0;i<player_all;++i)
+    if(game_paused)
     {
-      py=player_y[i]>>FP_BITS;
+      // Pause overlay: hide gameplay sprites to keep the message clean and avoid OAM overflow.
+      spr=0;
 
-      if(player_wait[i])
+      // Small frozen cast on top of the pause card.
+      spr=oam_meta_spr(64,72,spr,sprEnemy1);
+      spr=oam_meta_spr(96,72,spr,sprEnemy2);
+      spr=oam_meta_spr(128,72,spr,sprEnemy3);
+      spr=oam_meta_spr(176,72,spr,sprPlayer);
+
+      spr=draw_oam_text(104,100,pauseStr,6,0,spr);
+      spr=draw_oam_text(72,124,pauseResumeStr,14,0,spr);
+      spr=draw_oam_text(64,152,pauseUrlStr,16,0,spr);
+
+      oam_hide_rest(spr);
+    }
+    else
+    {
+      spr=(player_all-1)<<4;
+
+      for(i=0;i<player_all;++i)
       {
-        if(player_wait[i]>=16||player_wait[i]&2) py=240;
+        py=player_y[i]>>FP_BITS;
+
+        if(player_wait[i])
+        {
+          if(player_wait[i]>=16||player_wait[i]&2) py=240;
+        }
+        else if(!i&&((frame_cnt&24)==24))
+        {
+          --py;
+        }
+        else if(i&&((frame_cnt&16)==0))
+        {
+          // v8: enemy slime bob. Shape stays stable; only Y position hops 2 pixels.
+          py-=2;
+        }
+
+        oam_meta_spr(player_x[i]>>FP_BITS,py,spr,sprListPlayer[i]);
+        spr-=16;
       }
 
-      oam_meta_spr(player_x[i]>>FP_BITS,py,spr,sprListPlayer[i]);
-      spr-=16;
-    }
+      //Draw pickup sprites. The power-up disks do not blink or swap frames.
+      spr=player_all<<4;
+      for(ptr=0;ptr<SHOT_MAX;++ptr)
+      {
+        if(shot_active[ptr]) spr=oam_spr(shot_x[ptr],shot_y[ptr],SHOT_TILE,0,spr);
+      }
+      for(ptr=0;ptr<CHIP_MAX;++ptr)
+      {
+        if(chip_active[ptr])
+        {
+          //Dropped collectibles no longer color-blink. They only do a tiny
+          //1-pixel bounce while staying a different palette from map items.
+          spr=oam_meta_spr(chip_x[ptr],chip_y[ptr]-((frame_cnt>>3)&1),spr,sprCodeChip);
+        }
+      }
+      if(orb_active)
+      {
+        if(orb_type==POWER_LIGHTNING)        spr=oam_meta_spr(orb_x,orb_y,spr,sprLightningOrb);
+        else if(orb_type==POWER_SKULL_CLEAR) spr=oam_meta_spr(orb_x,orb_y,spr,sprSkullOrb);
+        else                                 spr=oam_meta_spr(orb_x,orb_y,spr,sprOrb);
+      }
 
-    if(shot_on)
-    {
-      oam_spr(shot_x>>FP_BITS,shot_y>>FP_BITS,TILE_ITEM,0,PLAYER_MAX<<4);
+      oam_hide_rest(spr);
     }
 
     //wait for next frame
@@ -726,15 +1464,17 @@ void game_loop(void)
 
     ++frame_cnt;
 
-    //slowly fade virtual brightness to needed value,
-    //which is max for gameplay or half for pause
+    //Keep pause bright/readable. v40 dimmed the whole screen, which made
+    //the pause text hard to read over the maze. v40b instead blacks out
+    //the background palette while paused and leaves sprite text bright.
 
     if(!(frame_cnt&3))
     {
-      if(!game_paused&&bright<4) ++bright;
-      if( game_paused&&bright>2) --bright;
-
-      pal_bright(bright);
+      if(bright<4)
+      {
+        ++bright;
+        pal_bright(bright);
+      }
     }
 
     //poll the gamepad in the trigger mode
@@ -747,16 +1487,154 @@ void game_loop(void)
     {
       game_paused^=TRUE;
       music_pause(game_paused);
+
+      if(game_paused)
+      {
+        //Black background + bright sprite text = readable pause screen.
+        pal_bg(palPauseBg);
+        pal_spr(palPauseSpr);
+        bright=4;
+        pal_bright(4);
+      }
+      else
+      {
+        //Restore the current level palettes when returning to play.
+        pal_bg(levelList[((game_level%LEVEL_LAYOUTS)<<1)+1]);
+        pal_spr(palGameSpr);
+        bright=4;
+        pal_bright(4);
+      }
     }
 
     //don't process anything in pause mode, just display latest game state
 
     if(game_paused) continue;
 
+    // v59 controls:
+    // A activates a held disk power-up. Disks are collected first, then used when needed.
+    if((i&PAD_A)&&held_power&&!freeze_timer&&!lightning_timer&&!skull_clear_timer)
+    {
+      if(held_power==POWER_LIGHTNING)
+      {
+        lightning_timer=LIGHTNING_TIME;
+        lightning_shot_timer=1;
+      }
+      else if(held_power==POWER_SKULL_CLEAR)
+      {
+        activate_skull_clear();
+      }
+      else
+      {
+        freeze_timer=FREEZE_DISK_TIME;
+        freeze_chime_timer=1;
+        music_stop();
+      }
+
+      held_power=0;
+      refresh_power_hud();
+      if(!skull_clear_timer) sfx_play(SFX_START,0);
+    }
+
+    // B gives the horn guy a short speed boost while moving.
+    // v61: cap each boost to at most 2 completed tile moves, so it feels
+    // like a quick burst instead of a long turbo mode.
+    if(i&PAD_B)
+    {
+      dash_boost_timer=DASH_BOOST_TIME;
+      dash_boost_tiles=DASH_BOOST_MAX_TILES;
+      player_speed[0]=DASH_BOOST_SPEED;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(dash_boost_timer && dash_boost_tiles)
+    {
+      --dash_boost_timer;
+      player_speed[0]=DASH_BOOST_SPEED;
+    }
+    else
+    {
+      dash_boost_timer=0;
+      dash_boost_tiles=0;
+      player_speed[0]=2<<FP_BITS;
+    }
+
     //CHR bank switching animation with different speed for background and sprites
 
     bank_bg((frame_cnt>>4)&1);
     bank_spr((frame_cnt>>3)&1);
+
+    //Lightning Disk auto-shoots in the horn guy's current direction.
+    if(lightning_timer)
+    {
+      if(lightning_shot_timer) --lightning_shot_timer;
+      if(!lightning_shot_timer)
+      {
+        if(spawn_shot()) sfx_play(SFX_ITEM,3);
+        lightning_shot_timer=LIGHTNING_SHOT_RATE;
+      }
+      --lightning_timer;
+    }
+
+    update_shots();
+
+    //Frozen Disk: enemies freeze in place, music stops, slimes flash icy blue/white,
+    //and a chime plays once per second until the timer runs out.
+    if(freeze_timer)
+    {
+      if(freeze_chime_timer) --freeze_chime_timer;
+      if(!freeze_chime_timer)
+      {
+        sfx_play(SFX_ITEM,3);
+        freeze_chime_timer=FREEZE_CHIME_PERIOD;
+      }
+
+      if(frame_cnt&8)
+      {
+        pal_col(22,0x2c); pal_col(23,0x30);
+        pal_col(26,0x2c); pal_col(27,0x30);
+        pal_col(30,0x2c); pal_col(31,0x30);
+      }
+      else
+      {
+        pal_col(22,0x1c); pal_col(23,0x2c);
+        pal_col(26,0x1c); pal_col(27,0x2c);
+        pal_col(30,0x1c); pal_col(31,0x2c);
+      }
+
+      --freeze_timer;
+      if(!freeze_timer)
+      {
+        pal_spr(palGameSpr);
+        freeze_chime_timer=0;
+        music_play(MUSIC_GAME);
+      }
+    }
+
+
+
+    if(skull_clear_timer)
+    {
+      --skull_clear_timer;
+    }
+
+    //Skull Clear polish: fast white flash right after activation.
+    //The flash is intentionally short so it feels like a laser blast
+    //without hiding the game for the full 3-second clear window.
+    if(skull_flash_timer)
+    {
+      --skull_flash_timer;
+      if(skull_flash_timer&2) pal_bright(8);
+      else pal_bright(4);
+
+      if(!skull_flash_timer)
+      {
+        pal_bright(4);
+        pal_bg(levelList[((game_level%LEVEL_LAYOUTS)<<1)+1]);
+        pal_spr(palGameSpr);
+      }
+    }
+
+    refresh_power_hud();
 
     //a counter that does not allow objects to move while spawn animation plays
 
@@ -767,18 +1645,11 @@ void game_loop(void)
       if(!wait) music_play(MUSIC_GAME);//start the music when all the objects spawned
     }
 
-    if(drop_wait) --drop_wait;
-    if(power_wait) --power_wait;
-    if(power_time) --power_time;
-    if(shot_wait) --shot_wait;
-
-    if(power_time&&!shot_on&&!shot_wait) spawn_shot();
-    move_shot();
-
     //check for level completion condition
 
-    if(items_collected==items_count&&!drops_left)
+    if(items_collected==items_count)
     {
+      add_score(SCORE_LEVEL);
       music_play(MUSIC_CLEAR);
       game_done=TRUE;
       game_clear=TRUE;
@@ -803,30 +1674,44 @@ void game_loop(void)
 
       if(wait) continue; //don't process object movements if spawn animation is running
 
-      if(i&&drops_left&&!drop_wait)
-      {
-        try_drop_at(i,FALSE);
-        drop_wait=48+(rand8()&63);
-      }
-
-      if(i&&power_ready&&!power_wait)
-      {
-        try_drop_at(i,TRUE);
-        power_wait=180;
-      }
+      //Frozen Disk: slimes are paused and harmless while the timer is active.
+      if(i&&freeze_timer) continue;
 
       //check collision of an enemy object with player object
       //NOT logic is used here, check http://gendev.spritesmind.net/page-collide.html
 
       if(i)
       {
+        //Frozen Disk shots destroy enemies and send them back to spawn.
+        for(ptr=0;ptr<SHOT_MAX;++ptr)
+        {
+          if(shot_active[ptr])
+          {
+            if(!((shot_x[ptr]+2)>=((player_x[i]>>FP_BITS)+14)||
+                 (shot_x[ptr]+6)< ((player_x[i]>>FP_BITS)+2)||
+                 (shot_y[ptr]+2)>=((player_y[i]>>FP_BITS)+14)||
+                 (shot_y[ptr]+6)< ((player_y[i]>>FP_BITS)+2)))
+            {
+              shot_active[ptr]=FALSE;
+              add_score(SCORE_ENEMY);
+              sfx_play(SFX_RESPAWN2,i);
+              player_x[i]=enemy_spawn_x[i];
+              player_y[i]=enemy_spawn_y[i];
+              player_cnt[i]=0;
+              player_dir[i]=DIR_NONE;
+              player_wait[i]=90;
+              break;
+            }
+          }
+        }
+
+        if(player_wait[i]) continue;
+
         if(!((player_x[i]+(4 <<FP_BITS))>=(player_x[0]+(12<<FP_BITS))||
              (player_x[i]+(12<<FP_BITS))< (player_x[0]+(4 <<FP_BITS))||
            (player_y[i]+(4 <<FP_BITS))>=(player_y[0]+(12<<FP_BITS))||
            (player_y[i]+(12<<FP_BITS))< (player_y[0]+(4 <<FP_BITS))))
         {
-          //if an enemy touch the player, quit the game loop
-
           if(!game_clear)
           {
             music_play(MUSIC_LOSE);
@@ -872,39 +1757,66 @@ void game_loop(void)
           //it is is the player object, check if there is an item in the new tile
           if(!i)
           {
+            // v61: if B boost is active, count completed tile moves and stop
+            // after two tiles even if the 1-second timer has time left.
+            if(dash_boost_timer && dash_boost_tiles)
+            {
+              --dash_boost_tiles;
+              if(!dash_boost_tiles)
+              {
+                dash_boost_timer=0;
+                player_speed[0]=2<<FP_BITS;
+              }
+            }
+
             i16=MAP_ADR((player_x[i]>>(TILE_SIZE_BIT+FP_BITS)),
                         (player_y[i]>>(TILE_SIZE_BIT+FP_BITS)));
 
-            if(map[i16]==TILE_ITEM||map[i16]==TILE_POWERUP)
+            if(map[i16]==TILE_ITEM)
             {
-              j=map[i16];
               map[i16]=TILE_EMPTY; //mark as collected in the game map
 
               sfx_play(SFX_ITEM,2);
-              if(j==TILE_POWERUP)
-              {
-                power_time=360;
-                shot_wait=8;
-              }
-              else
-              {
-                ++items_collected;
-              }
-
-              //get address of the tile in the nametable
-
-              i16=NAMETABLE_A+0x0080+(((player_y[i]>>(TILE_SIZE_BIT+FP_BITS))-2)<<6)|
-                                      ((player_x[i]>>(TILE_SIZE_BIT+FP_BITS))<<1);
+              ++items_collected;
+              add_score(SCORE_CART);
 
               //replace it with empty tile through the update list
 
-              clear_block_update(i16);
+              queue_meta_tile(map_index_to_nt(i16),TILE_EMPTY);
 
-              //update number of collected items in the game stats
+              //update number of collected carts/chips in the game stats
 
-              update_list[14]=0x10+items_collected/100;
-              update_list[17]=0x10+items_collected/10%10;
-              update_list[20]=0x10+items_collected%10;
+              refresh_items_hud();
+            }
+
+            if(orb_at_index(i16))
+            {
+              orb_active=FALSE;
+
+              // v59: collect the disk into a held slot instead of activating immediately.
+              // Press A to use it when the timing is right.
+              held_power=orb_type;
+              refresh_power_hud();
+
+              add_score(SCORE_ORB);
+              sfx_play(SFX_ITEM,2);
+              orb_type=0;
+            }
+
+            //Code Chips are now sprites, not background tiles. Collect them
+            //when the player reaches the same 16x16 map cell.
+            for(ptr=0;ptr<CHIP_MAX;++ptr)
+            {
+              if(chip_active[ptr]&&
+                 chip_x[ptr]==(player_x[0]>>(FP_BITS))&&
+                 chip_y[ptr]==(player_y[0]>>(FP_BITS)))
+              {
+                chip_active[ptr]=FALSE;
+                sfx_play(SFX_ITEM,2);
+                ++items_collected;
+                add_score(SCORE_CHIP);
+                refresh_items_hud();
+              }
             }
           }
         }
@@ -945,6 +1857,36 @@ void game_loop(void)
           //excluding the direction that is opposite to previous one
 
           i16=MAP_ADR((player_x[i]>>8),(player_y[i]>>8));
+
+          //Pixel Panic v2.7: make the enemy-drop feature visible again.
+          //Enemies can start dropping the Frozen Disk and required purple
+          //Code Chips after the level has been active briefly. This keeps the
+          //feature obvious instead of hiding it until every green cart is gone.
+          if(frame_cnt>90&&map[i16]==TILE_EMPTY&&!chip_at_index(i16)&&!orb_at_index(i16))
+          {
+            //First power drops are Frozen Disk, Lightning Bolt, then Skull Clear.
+            if(!orb_spawned)
+            {
+              orb_spawned=TRUE;
+              spawn_orb(i16);
+            }
+            else if(!lightning_spawned&&chips_spawned>=1)
+            {
+              lightning_spawned=TRUE;
+              spawn_lightning_orb(i16);
+            }
+            else if(!skull_spawned&&chips_spawned>=2)
+            {
+              skull_spawned=TRUE;
+              spawn_skull_orb(i16);
+            }
+            //After that, enemies drop the required purple Code Chips often.
+            else if(chips_spawned<chips_required&&!(rand8()%CODE_CHIP_DROP_CHANCE))
+            {
+              spawn_code_chip(i16);
+            }
+          }
+
           ptr=player_dir[i];
           j=0;
 
@@ -971,7 +1913,6 @@ void game_loop(void)
         }
       }
     }
-
   }
 
   delay(100);
@@ -994,16 +1935,26 @@ void main(void)
   {
     title_screen();
 
-    game_level=0;
+    game_level=start_level;
     game_lives=4;
+    game_score=0;
 
     while(game_lives&&game_level<LEVELS_ALL)//loop for gameplay
     {
       show_screen(game_level);
+      show_ready_countdown();
 
       game_loop();
 
-      if(game_clear) ++game_level; else --game_lives;
+      if(game_clear)
+      {
+        show_level_clear(game_level);
+        ++game_level;
+      }
+      else
+      {
+        --game_lives;
+      }
     }
 
     show_screen(!game_lives?SCREEN_GAMEOVER:SCREEN_WELLDONE);//show game results
