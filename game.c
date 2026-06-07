@@ -1,6 +1,26 @@
-// Retro Replay: In Pixel Panic by dmb062082
-//This was based off of the Chase NES game Demo by Shiru
+// v74: Skull Clear polish: screen flash, stronger blast sound, and 3-second slime vanish.
+// v80: adds pause-screen power-up legend using existing sprites only.
+// v78: fixes corrupted big text by removing fourth-slime custom tile overwrite; slows late-game enemies.
+// v77: adds a 4th late-game Nightmare Slime with its own tiles and tougher AI.
+// v76: later levels now ramp enemy speed and aggression.
+// v66: dropped chips now exactly match the tiny map collectible shape, only palette-swapped.
+// v49: expands the 50-stage loop to cycle 10 physical layouts instead of 5.
+// v41: adds a GET READY 3-2-1 countdown before each level.
+// v40: adds a gameplay pause overlay with Retro-Replay.com.
+// v16 gameplay test: Frozen Disk + Lightning Disk power-ups.
+// Frozen Disk stops music, freezes slimes, and chimes once per second.
+// v61: A activates a held power-up, B gives a short movement speed boost capped at 2 tiles.
+// Lightning Disk auto-shoots cyan lightning bolts for about 5 seconds after A activation.
+// v20 removes unused PW HUD label and rebuilds level 2 inside safe visible borders.
+// v8 art fix: enemy slime now keeps the user's pointed slime/reference shape with mean black face.
+// Tiles 0x55-0x58 are now a floppy disk power-up instead of a compact disc.
+// Both sprite CHR banks use identical art; enemy bounce is handled by Y-position only.
+//Chase NES game by Shiru (shiru@mail.ru) 01'12
+//Feel free to do anything you want with this code, consider it Public Domain
 
+//This game is an example for my article Programming NES games in C
+
+//include the library
 
 #include "neslib.h"
 #include <string.h>
@@ -69,6 +89,7 @@
 #define TILE_ENEMY1    0x11
 #define TILE_ENEMY2    0x12
 #define TILE_ENEMY3    0x13
+#define TILE_ENEMY4    0x14  // v77: spawned late-game Nightmare Slime
 #define TILE_WALL    0x40
 #define TILE_EMPTY    0x44
 #define TILE_ITEM    0x45
@@ -115,7 +136,7 @@
 
 //total number of moving characters on the screen
 
-#define PLAYER_MAX  4
+#define PLAYER_MAX  5  // v77: player + three normal slimes + late-game Nightmare Slime
 
 //sound effect numbers, it is easier to use meaningful defines than
 //remember actual numbers of the effects
@@ -201,6 +222,16 @@ const unsigned char sprEnemy3[]={
   128
 };
 
+// v78: late-game Nightmare Slime reuses safe slime tiles.
+// The v77 custom tiles at 0x62-0x65 collided with big text/font graphics.
+const unsigned char sprEnemy4[]={
+  0, 0,0x4d,3,
+  8, 0,0x4e,3,
+  0, 8,0x4f,3,
+  8, 8,0x50,3,
+  128
+};
+
 //Sprite-based dropped item. It uses cleaned sprite copies of the
 //map collectible art (tiles 0x51-0x54). The floor/background pixels
 //are transparent, so the dropped item no longer discolors the maze.
@@ -253,7 +284,7 @@ const unsigned char sprSkullOrb[]={
 
 //list of metasprites
 
-const unsigned char* const sprListPlayer[]={ sprPlayer,sprEnemy1,sprEnemy2,sprEnemy3 };
+const unsigned char* const sprListPlayer[]={ sprPlayer,sprEnemy1,sprEnemy2,sprEnemy3,sprEnemy4 };
 
 
 //list of the levels, include pointer to the packed nametable of the level,
@@ -340,6 +371,15 @@ void put_score_num(unsigned int adr,unsigned int num);
 const unsigned char pauseStr[6]={0x30,0x21,0x35,0x33,0x25,0x24}; //PAUSED
 const unsigned char pauseResumeStr[14]={0x30,0x32,0x25,0x33,0x33,0x00,0x33,0x34,0x21,0x32,0x34,0x00,0x01,0x01}; //PRESS START!!
 const unsigned char pauseUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x0d,0x32,0x25,0x30,0x2c,0x21,0x39,0x0e,0x23,0x2f,0x2d}; //RETRO-REPLAY.COM
+
+// v80 pause power legend. Text is sprite-drawn; no CHR changes.
+// Tile font mapping: A=0x21, B=0x22 ... Z=0x3a, space=0x00.
+const unsigned char pauseLegendStr[10]={0x30,0x37,0x32,0x00,0x2c,0x25,0x27,0x25,0x2e,0x24}; //PWR LEGEND
+const unsigned char pauseFreezeStr[6]={0x26,0x32,0x25,0x25,0x3a,0x25}; //FREEZE
+const unsigned char pauseZapStr[3]={0x3a,0x21,0x30}; //ZAP
+const unsigned char pauseClearStr[5]={0x23,0x2c,0x25,0x21,0x32}; //CLEAR
+const unsigned char pauseChipStr[4]={0x23,0x28,0x29,0x30}; //CHIP
+const unsigned char pauseUseDashStr[12]={0x21,0x00,0x35,0x33,0x25,0x00,0x22,0x00,0x24,0x21,0x33,0x28}; //A USE B DASH
 
 // Title-screen level select text. Drawn with sprites so the title nametable
 // does not have to be rewritten while rendering is on.
@@ -446,6 +486,8 @@ static unsigned char player_dir  [PLAYER_MAX];
 static int           player_cnt  [PLAYER_MAX];
 static unsigned int  player_speed[PLAYER_MAX];
 static unsigned char player_wait [PLAYER_MAX];
+// v77: sprite/behavior kind. 0=player, 1-3=normal slimes, 4=Nightmare Slime.
+static unsigned char player_kind [PLAYER_MAX];
 
 //number of items on current level, total and collected
 
@@ -1298,6 +1340,7 @@ void game_loop(void)
       case TILE_ENEMY1://enemies
       case TILE_ENEMY2:
       case TILE_ENEMY3:
+      case TILE_ENEMY4:
         player_dir  [player_all]=DIR_NONE;
         player_x    [player_all]=(j<<3)<<FP_BITS;
         player_y    [player_all]=(i<<4)<<FP_BITS;
@@ -1305,9 +1348,16 @@ void game_loop(void)
         enemy_spawn_y[player_all]=player_y[player_all];
         player_cnt  [player_all]=0;
         player_wait [player_all]=16+((spr-TILE_PLAYER)<<4);
+        player_kind [player_all]=spr-TILE_PLAYER;
         player_speed[player_all]=(spr==TILE_PLAYER)?2<<FP_BITS:10+((spr-TILE_ENEMY1)<<1);
-        // v43: small difficulty climb every 10 stages, without changing maps.
+        // v78: gentler enemy speed ramp.
+        // Stages 01-10: normal
+        // Stages 11-20: +1
+        // Stages 21-30: +2
+        // Stages 31-40: +3
+        // Stages 41-50: +4
         if(spr!=TILE_PLAYER) player_speed[player_all]+=(game_level/10);
+        if(spr==TILE_ENEMY4) player_speed[player_all]+=2; // Nightmare is tougher, but no longer insane.
         ++player_all;
         wait+=16;
         spr=TILE_EMPTY;
@@ -1335,6 +1385,22 @@ void game_loop(void)
   // It cycles 3-8 required Code Chips instead of growing past CHIP_MAX.
   chips_required=CODE_CHIP_BASE+(game_level%6);
   items_count+=chips_required;
+
+  // v78: Add a 4th late-game Nightmare Slime, but not too early.
+  // It now starts from Stage 31 onward instead of Stage 21, and it is slower.
+  if(game_level>=30 && player_all<PLAYER_MAX && player_all>1)
+  {
+    player_dir  [player_all]=DIR_NONE;
+    player_x    [player_all]=enemy_spawn_x[1];
+    player_y    [player_all]=enemy_spawn_y[1];
+    enemy_spawn_x[player_all]=player_x[player_all];
+    enemy_spawn_y[player_all]=player_y[player_all];
+    player_cnt  [player_all]=0;
+    player_wait [player_all]=96;
+    player_kind [player_all]=4;
+    player_speed[player_all]=14+(game_level/10);
+    ++player_all;
+  }
 
   //setup update list
 
@@ -1372,15 +1438,25 @@ void game_loop(void)
       // Pause overlay: hide gameplay sprites to keep the message clean and avoid OAM overflow.
       spr=0;
 
-      // Small frozen cast on top of the pause card.
-      spr=oam_meta_spr(64,72,spr,sprEnemy1);
-      spr=oam_meta_spr(96,72,spr,sprEnemy2);
-      spr=oam_meta_spr(128,72,spr,sprEnemy3);
-      spr=oam_meta_spr(176,72,spr,sprPlayer);
+      // v80: Power-up legend. Uses existing metasprites only;
+      // no new tiles and no CHR movement.
+      // OAM budget: 4 icons = 16 sprites, text = 46 sprites, total = 62.
+      spr=draw_oam_text(104,32,pauseStr,6,0,spr);
+      spr=draw_oam_text(88,56,pauseLegendStr,10,0,spr);
 
-      spr=draw_oam_text(104,100,pauseStr,6,0,spr);
-      spr=draw_oam_text(72,124,pauseResumeStr,14,0,spr);
-      spr=draw_oam_text(64,152,pauseUrlStr,16,0,spr);
+      spr=oam_meta_spr(64,80,spr,sprOrb);
+      spr=draw_oam_text(88,84,pauseFreezeStr,6,0,spr);
+
+      spr=oam_meta_spr(64,104,spr,sprLightningOrb);
+      spr=draw_oam_text(88,108,pauseZapStr,3,0,spr);
+
+      spr=oam_meta_spr(64,128,spr,sprSkullOrb);
+      spr=draw_oam_text(88,132,pauseClearStr,5,0,spr);
+
+      spr=oam_meta_spr(64,152,spr,sprCodeChipGlow);
+      spr=draw_oam_text(88,156,pauseChipStr,4,0,spr);
+
+      spr=draw_oam_text(80,188,pauseUseDashStr,12,0,spr);
 
       oam_hide_rest(spr);
     }
@@ -1406,7 +1482,7 @@ void game_loop(void)
           py-=2;
         }
 
-        oam_meta_spr(player_x[i]>>FP_BITS,py,spr,sprListPlayer[i]);
+        oam_meta_spr(player_x[i]>>FP_BITS,py,spr,sprListPlayer[player_kind[i]]);
         spr-=16;
       }
 
@@ -1872,6 +1948,14 @@ void game_loop(void)
           }
 
           ptr=player_dir[i];
+
+          // v78: later levels are more aggressive, but less impossible.
+          // Slimes turn around more in later stages, but not constantly.
+          spr=game_level/10;
+          if(player_kind[i]==4&&!(rand8()&1)) ptr=DIR_NONE; // Nightmare can reverse often, not always.
+          if(spr>=3&&!(rand8()&3)) ptr=DIR_NONE; // stages 31+
+          if(spr>=4&&!(rand8()&1)) ptr=DIR_NONE; // stages 41+
+
           j=0;
 
           if(ptr!=DIR_RIGHT&&map[i16-1]!=TILE_WALL) dir[j++]=DIR_LEFT;
@@ -1889,10 +1973,15 @@ void game_loop(void)
 
           if(j>1)
           {
-            if(ptr!=DIR_DOWN &&player_y[0]<player_y[i]) player_move(i,DIR_UP);
-            if(ptr!=DIR_UP   &&player_y[0]>player_y[i]) player_move(i,DIR_DOWN);
-            if(ptr!=DIR_RIGHT&&player_x[0]<player_x[i]) player_move(i,DIR_LEFT);
-            if(ptr!=DIR_LEFT &&player_x[0]>player_x[i]) player_move(i,DIR_RIGHT);
+            // v76: chase chance improves as levels climb.
+            // Early stages stay readable, later stages feel meaner.
+            if((player_kind[i]==4 && !(rand8()&1)) || spr==0 || (spr>=2 && (rand8()&3)<spr))
+            {
+              if(ptr!=DIR_DOWN &&player_y[0]<player_y[i]) player_move(i,DIR_UP);
+              if(ptr!=DIR_UP   &&player_y[0]>player_y[i]) player_move(i,DIR_DOWN);
+              if(ptr!=DIR_RIGHT&&player_x[0]<player_x[i]) player_move(i,DIR_LEFT);
+              if(ptr!=DIR_LEFT &&player_x[0]>player_x[i]) player_move(i,DIR_RIGHT);
+            }
           }
         }
       }
