@@ -1,27 +1,21 @@
-// v74: Skull Clear polish: screen flash, stronger blast sound, and 3-second slime vanish.
-// v80: adds pause-screen power-up legend using existing sprites only.
-// v78: fixes corrupted big text by removing fourth-slime custom tile overwrite; slows late-game enemies.
-// v77: adds a 4th late-game Nightmare Slime with its own tiles and tougher AI.
-// v76: later levels now ramp enemy speed and aggression.
-// v66: dropped chips now exactly match the tiny map collectible shape, only palette-swapped.
-// v49: expands the 50-stage loop to cycle 10 physical layouts instead of 5.
-// v41: adds a GET READY 3-2-1 countdown before each level.
-// v40: adds a gameplay pause overlay with Retro-Replay.com.
-// v16 gameplay test: Frozen Disk + Lightning Disk power-ups.
-// Frozen Disk stops music, freezes slimes, and chimes once per second.
-// v61: A activates a held power-up, B gives a short movement speed boost capped at 2 tiles.
-// Lightning Disk auto-shoots cyan lightning bolts for about 5 seconds after A activation.
-// v20 removes unused PW HUD label and rebuilds level 2 inside safe visible borders.
-// v8 art fix: enemy slime now keeps the user's pointed slime/reference shape with mean black face.
-// Tiles 0x55-0x58 are now a floppy disk power-up instead of a compact disc.
-// Both sprite CHR banks use identical art; enemy bounce is handled by Y-position only.
-//Chase NES game by Shiru (shiru@mail.ru) 01'12
-//Feel free to do anything you want with this code, consider it Public Domain
-
-//This game is an example for my article Programming NES games in C
-
-//include the library
-
+// Retro Replay: Pixel Panic
+// This is a heavily modded fork from the great Chase NES Demo by Shiru.
+// Retro-Replay.com
+// Special thanks to screenname bigbastard25 for his help with this ROM.
+//
+// Major new features added:
+// - Full Retro Replay visual retheme with new title screen, HUD, sprites, and palettes.
+// - 50-stage structure using 10 repeating maze layouts.
+// - Level select from the title screen.
+// - GET READY countdown before each stage.
+// - Level clear, well done, game over, score, lives, items, power HUD, and high score screens.
+// - Pause screen with power-up legend and Retro-Replay.com branding.
+// - New enemy slime art with multiple colors, late-game Nightmare Slime, and speed/aggression scaling.
+// - Power-up system with Frozen Disk, Lightning Disk, Skull Clear, and B-button dash boost.
+// - Dropped code-chip collectibles and power-up drops.
+// - Custom title intro music and quieter uploaded main gameplay song.
+//
+// Library includes
 #include "neslib.h"
 #include <string.h>
 
@@ -38,6 +32,12 @@
 #include "title_nam.h"
 #include "level_nam.h"
 #include "gameover_nam.h"
+
+extern const void sound_data[];
+extern const void music_data[];
+extern const void music_data_main[];
+extern const void music_data_untitled[];
+
 #include "welldone_nam.h"
 
 //include nametables for levels
@@ -177,7 +177,7 @@ const unsigned char palGame5[16]={ 0x0f,0x04,0x24,0x30,0x0f,0x05,0x25,0x30,0x0f,
 // Sprite palette fix: enemy palettes use visible black for face details.
 // Enemy CHR tiles 0x4d-0x50 were also edited so transparent face holes
 // become real black pixels and the old white forehead shine is color 2.
-const unsigned char palGameSpr[16]={ 0x0f,0x14,0x2c,0x30,0x0f,0x0f,0x25,0x15,0x0f,0x0f,0x21,0x11,0x0f,0x0f,0x29,0x19 };
+const unsigned char palGameSpr[16]={ 0x0f,0x14,0x2c,0x30,0x0f,0x0f,0x25,0x15,0x0f,0x0f,0x21,0x11,0x0f,0x0f,0x29,0x19 }; // v97 palette 3 restored to green; 4th slime uses palette 0
 
 // v40b pause palettes: make the playfield black and make pause text bright.
 // Sprite palette 0 is forced white for the tile-font text; slime palettes stay colored.
@@ -224,11 +224,13 @@ const unsigned char sprEnemy3[]={
 
 // v78: late-game Nightmare Slime reuses safe slime tiles.
 // The v77 custom tiles at 0x62-0x65 collided with big text/font graphics.
+// v97: use sprite palette 0 for an icy/cyan special slime.
+// This keeps regular slimes on pink, blue, and green palettes.
 const unsigned char sprEnemy4[]={
-  0, 0,0x4d,3,
-  8, 0,0x4e,3,
-  0, 8,0x4f,3,
-  8, 8,0x50,3,
+  0, 0,0x4d,0,
+  8, 0,0x4e,0,
+  0, 8,0x4f,0,
+  8, 8,0x50,0,
   128
 };
 
@@ -445,6 +447,23 @@ void put_big_level_num(unsigned int adr,unsigned char num)
   }
 }
 
+// v82: The big level number sits at tile x20-y12 and is 7x5 tiles.
+// These attribute bytes switch only that right-side number area to BG palette 2.
+// Palette 2 is set to purple below. This avoids touching CHR/sprite art.
+void put_big_level_num_purple_attrs(void)
+{
+  // Attribute row for y12-y15, columns covering x20-x27.
+  vram_adr(NAMETABLE_A+0x03c0+3*8+5);
+  vram_put(0xaa); // all quadrants palette 2
+  vram_put(0xaa); // all quadrants palette 2
+
+  // Attribute row for y16-y19, same columns.
+  // Only top quadrants need palette 2 because the number is 5 tiles tall.
+  vram_adr(NAMETABLE_A+0x03c0+4*8+5);
+  vram_put(0x0a); // top half palette 2
+  vram_put(0x0a); // top half palette 2
+}
+
 
 //array for game map, contains walls, empty spaces, and items
 
@@ -642,6 +661,12 @@ void title_screen(void)
   pal_bright(4);
   oam_clear();
   ppu_on_all();
+
+  // v98: restored title intro music.
+  famitone_init(&music_data_untitled);
+  sfx_init(&sound_data);
+  music_play(0);
+
   delay(20);//delay just to make it look better
 
   iy=240<<FP_BITS;
@@ -760,6 +785,7 @@ void show_screen(unsigned char num)
     // v58: remove the little STAGE line, but keep the level number big.
     // This draws 01-50 as chunky 3x5 block digits beside LEVEL.
     put_big_level_num(NAMETABLE_A+0x0194,num+1);
+    put_big_level_num_purple_attrs();
   }
 
   //Retro Replay: add final score/high score to the Game Over screen.
@@ -787,6 +813,10 @@ void show_screen(unsigned char num)
   pal_col(2,i16&0xff);//this palette entry is used for flashing text
   pal_col(3,0x30);
   pal_col(6,0x30);
+  // v82: BG palette 2 used only for the big level number.
+  pal_col(9,0x15);
+  pal_col(10,0x25);
+  pal_col(11,0x30);
   ppu_on_bg();
 
   pal_fade_to(4);
@@ -828,6 +858,7 @@ void show_level_clear(unsigned char num)
 
   // v58: show the true level number big on the LEVEL CLEAR screen.
   put_big_level_num(NAMETABLE_A+0x0194,num+1);
+  put_big_level_num_purple_attrs();
 
   //Move CLEAR down so it no longer sits inside the big LEVEL letters.
   vram_adr(NAMETABLE_A+0x022d);
@@ -852,6 +883,10 @@ void show_level_clear(unsigned char num)
   pal_col(3,0x30);
   pal_col(6,0x30);
   pal_bg(palGame1);
+  // v82: BG palette 2 used only for the big level number.
+  pal_col(9,0x15);
+  pal_col(10,0x25);
+  pal_col(11,0x30);
   pal_spr(palGameSpr);
   ppu_on_all();
 
@@ -1587,7 +1622,6 @@ void game_loop(void)
       {
         freeze_timer=FREEZE_DISK_TIME;
         freeze_chime_timer=1;
-        music_stop();
       }
 
       held_power=0;
@@ -1637,7 +1671,7 @@ void game_loop(void)
 
     update_shots();
 
-    //Frozen Disk: enemies freeze in place, music stops, slimes flash icy blue/white,
+    //Frozen Disk: enemies freeze in place, music keeps playing, slimes flash icy blue/white,
     //and a chime plays once per second until the timer runs out.
     if(freeze_timer)
     {
@@ -1666,7 +1700,7 @@ void game_loop(void)
       {
         pal_spr(palGameSpr);
         freeze_chime_timer=0;
-        music_play(MUSIC_GAME);
+        // v94: freeze ends without touching music.
       }
     }
 
@@ -1702,7 +1736,13 @@ void game_loop(void)
     {
       --wait;
 
-      if(!wait) music_play(MUSIC_GAME);//start the music when all the objects spawned
+      if(!wait)
+      {
+        // v88: switch to uploaded gameplay music data.
+        famitone_init(&music_data_main);
+        sfx_init(&sound_data);
+        music_play(0);
+      }//start the music when all the objects spawned
     }
 
     //check for level completion condition
@@ -1710,6 +1750,9 @@ void game_loop(void)
     if(items_collected==items_count)
     {
       add_score(SCORE_LEVEL);
+      // v88: restore original music data for clear jingle/screen music.
+      famitone_init(&music_data);
+      sfx_init(&sound_data);
       music_play(MUSIC_CLEAR);
       game_done=TRUE;
       game_clear=TRUE;
@@ -1774,6 +1817,9 @@ void game_loop(void)
         {
           if(!game_clear)
           {
+            // v88: restore original music data for lose jingle/screen music.
+            famitone_init(&music_data);
+            sfx_init(&sound_data);
             music_play(MUSIC_LOSE);
             game_done=TRUE;
             break;
@@ -2008,6 +2054,10 @@ void main(void)
   {
     title_screen();
 
+    // v98: restore original multi-song data after title intro.
+    famitone_init(&music_data);
+    sfx_init(&sound_data);
+
     game_level=start_level;
     game_lives=4;
     game_score=0;
@@ -2018,6 +2068,10 @@ void main(void)
       show_ready_countdown();
 
       game_loop();
+
+      // v88: make sure screen music uses original multi-song music data.
+      famitone_init(&music_data);
+      sfx_init(&sound_data);
 
       if(game_clear)
       {
