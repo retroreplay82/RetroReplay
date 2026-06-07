@@ -11,12 +11,8 @@
 // v8 art fix: enemy slime now keeps the user's pointed slime/reference shape with mean black face.
 // Tiles 0x55-0x58 are now a floppy disk power-up instead of a compact disc.
 // Both sprite CHR banks use identical art; enemy bounce is handled by Y-position only.
-//Chase NES game by Shiru (shiru@mail.ru) 01'12
-//Feel free to do anything you want with this code, consider it Public Domain
+//This was based off of the Chase NES game Demo by Shiru
 
-//This game is an example for my article Programming NES games in C
-
-//include the library
 
 #include "neslib.h"
 #include <string.h>
