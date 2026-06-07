@@ -6,7 +6,6 @@
 // Major new features added:
 // - Full Retro Replay visual retheme with new title screen, HUD, sprites, and palettes.
 // - 50-stage structure using 10 repeating maze layouts.
-// - Level select from the title screen.
 // - GET READY countdown before each stage.
 // - Level clear, well done, game over, score, lives, items, power HUD, and high score screens.
 // - Pause screen with power-up legend and Retro-Replay.com branding.
@@ -555,7 +554,7 @@ static unsigned int  high_score;
 // another ZEROPAGE overflow. This is the stage the next game starts on.
 #pragma bss-name(push,"BSS")
 #pragma data-name(push,"DATA")
-static unsigned char start_level;
+static unsigned char start_level; // v102 publish build always starts at Stage 1
 #pragma data-name(pop)
 #pragma bss-name(pop)
 
@@ -692,47 +691,17 @@ void title_screen(void)
     spr=oam_meta_spr(i-78,py+2,spr,sprEnemy2);
     spr=oam_meta_spr(i-112,py+1,spr,sprEnemy3);
 
-    // v54 debug/convenience level select on the title screen.
-    // LEFT/RIGHT changes one stage, UP/DOWN changes ten stages, SELECT resets.
-    // START begins on the displayed stage.
-    spr=oam_text(84,216,titleStageStr,6,spr,0);
-    spr=oam_spr(132,216,0x10+(start_level+1)/10,0,spr);
-    spr=oam_spr(140,216,0x10+(start_level+1)%10,0,spr);
+    // v102 publish build: no stage selector on title screen.
+    // START begins a normal game from Stage 1.
     oam_hide_rest(spr);
 
     ptr=pad_trigger(0);
 
-    if(ptr&PAD_RIGHT)
-    {
-      if(start_level+1<LEVELS_ALL) ++start_level; else start_level=0;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_LEFT)
-    {
-      if(start_level) --start_level; else start_level=LEVELS_ALL-1;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_UP)
-    {
-      if(start_level+10<LEVELS_ALL) start_level+=10; else start_level=LEVELS_ALL-1;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_DOWN)
-    {
-      if(start_level>=10) start_level-=10; else start_level=0;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_SELECT)
+    if(ptr&PAD_START)
     {
       start_level=0;
-      sfx_play(SFX_ITEM,1);
+      break;
     }
-
-    if(ptr&PAD_START) break;
 
     ++frame_cnt;
     iy+=dy;
