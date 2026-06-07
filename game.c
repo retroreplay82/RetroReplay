@@ -1,16 +1,4 @@
-// v74: Skull Clear polish: screen flash, stronger blast sound, and 3-second slime vanish.
-// v66: dropped chips now exactly match the tiny map collectible shape, only palette-swapped.
-// v49: expands the 50-stage loop to cycle 10 physical layouts instead of 5.
-// v41: adds a GET READY 3-2-1 countdown before each level.
-// v40: adds a gameplay pause overlay with Retro-Replay.com.
-// v16 gameplay test: Frozen Disk + Lightning Disk power-ups.
-// Frozen Disk stops music, freezes slimes, and chimes once per second.
-// v61: A activates a held power-up, B gives a short movement speed boost capped at 2 tiles.
-// Lightning Disk auto-shoots cyan lightning bolts for about 5 seconds after A activation.
-// v20 removes unused PW HUD label and rebuilds level 2 inside safe visible borders.
-// v8 art fix: enemy slime now keeps the user's pointed slime/reference shape with mean black face.
-// Tiles 0x55-0x58 are now a floppy disk power-up instead of a compact disc.
-// Both sprite CHR banks use identical art; enemy bounce is handled by Y-position only.
+// Retro Replay: In Pixel Panic by dmb062082
 //This was based off of the Chase NES game Demo by Shiru
 
 
