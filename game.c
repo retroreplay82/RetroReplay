@@ -5,12 +5,14 @@
 //
 // Major new features added:
 // - Full Retro Replay visual retheme with new title screen, HUD, sprites, and palettes.
-// - 50-stage structure using 10 repeating maze layouts.
+// - 50-stage structure using 11 layouts; Stage 11 has 2 slimes, grey gate, bottom-shadow fuse-flash bomb art, and a chip-filled test layout.
+// - Testing-only title-screen level select is enabled in this build.
 // - GET READY countdown before each stage.
 // - Level clear, well done, game over, score, lives, items, power HUD, and high score screens.
 // - Pause screen with power-up legend and Retro-Replay.com branding.
 // - New enemy slime art with multiple colors, late-game Nightmare Slime, and speed/aggression scaling.
 // - Power-up system with Frozen Disk, Lightning Disk, Skull Clear, and B-button dash boost.
+// - Testing-only Glitch Bomb mechanic: B picks up/drops stable fuse-flash bombs; otherwise B dashes.
 // - Dropped code-chip collectibles and power-up drops.
 // - Custom title intro music and quieter uploaded main gameplay song.
 //
@@ -51,6 +53,7 @@ extern const void music_data_untitled[];
 #include "level8_nam.h"
 #include "level9_nam.h"
 #include "level10_nam.h"
+#include "level11_nam.h"
 
 //game uses 12:4 fixed point calculations for enemy movements
 
@@ -115,6 +118,27 @@ extern const void music_data_untitled[];
 #define SHOT_MAX              3
 #define SHOT_SPEED            5
 #define SHOT_TILE             0x59
+#define BOMB_NONE             0
+#define BOMB_FLOOR            1
+#define BOMB_HELD             2
+#define BOMB_TIME           240  // about 4 seconds at 60 fps
+#define BOMB_BLAST_TIME      24
+#define BOMB_RADIUS          34
+#define BOMB_PICKUP_RANGE    18
+#define BOMB_BREAK_RADIUS     1  // breaks interior walls in a 3x3 tile area
+#define BOMB_DROP_CHANCE     12
+#define BOMB_TILE_A        0xe8
+#define BOMB_TILE_B        0xe9
+#define BOMB_TILE_C        0xea
+#define BOMB_TILE_D        0xeb
+#define BOMB_RED_TILE_A    0xec
+#define BOMB_RED_TILE_B    0xed
+#define BOMB_RED_TILE_C    0xee
+#define BOMB_RED_TILE_D    0xef
+#define GATE_TILE_A        0xf0
+#define GATE_TILE_B        0xf1
+#define GATE_TILE_C        0xf2
+#define GATE_TILE_D        0xf3
 
 #define SCORE_CART    1
 #define SCORE_CHIP    1
@@ -124,7 +148,7 @@ extern const void music_data_untitled[];
 
 //number of levels in the game
 
-#define LEVEL_LAYOUTS  10
+#define LEVEL_LAYOUTS  11
 #define LEVELS_ALL     50
 
 //numbers for screens that are displayed by the same function as the
@@ -282,6 +306,34 @@ const unsigned char sprSkullOrb[]={
   128
 };
 
+// v107: improved 16x16 Glitch Bomb sprite in safe high tile slots.
+// Normal and red blink use the same shape, just different CHR color indices.
+const unsigned char sprBomb[]={
+  0, 0,BOMB_TILE_A,1,
+  8, 0,BOMB_TILE_B,1,
+  0, 8,BOMB_TILE_C,1,
+  8, 8,BOMB_TILE_D,1,
+  128
+};
+
+const unsigned char sprBombRed[]={
+  0, 0,BOMB_RED_TILE_A,1,
+  8, 0,BOMB_RED_TILE_B,1,
+  0, 8,BOMB_RED_TILE_C,1,
+  8, 8,BOMB_RED_TILE_D,1,
+  128
+};
+
+// v118: visual marker for the only breakable Stage 11 gate.
+// Drawn as a sprite overlay so the background palette does not discolor the whole map.
+const unsigned char sprBreakGate[]={
+  0, 0,GATE_TILE_A,0,
+  8, 0,GATE_TILE_B,0,
+  0, 8,GATE_TILE_C,0,
+  8, 8,GATE_TILE_D,0,
+  128
+};
+
 
 //list of metasprites
 
@@ -301,7 +353,8 @@ level6_nam,palGame1,
 level7_nam,palGame2,
 level8_nam,palGame3,
 level9_nam,palGame4,
-level10_nam,palGame5
+level10_nam,palGame5,
+level11_nam,palGame3
 };
 
 
@@ -554,7 +607,7 @@ static unsigned int  high_score;
 // another ZEROPAGE overflow. This is the stage the next game starts on.
 #pragma bss-name(push,"BSS")
 #pragma data-name(push,"DATA")
-static unsigned char start_level; // v102 publish build always starts at Stage 1
+static unsigned char start_level; // v103 testing build: selected title-screen start stage
 #pragma data-name(pop)
 #pragma bss-name(pop)
 
@@ -566,6 +619,14 @@ static unsigned char dash_boost_timer;
 static unsigned char dash_boost_tiles;
 static unsigned int  skull_clear_timer;
 static unsigned char skull_flash_timer;
+static unsigned char bomb_state;
+static unsigned char bomb_x;
+static unsigned char bomb_y;
+static unsigned int  bomb_timer;
+static unsigned char bomb_blast_timer;
+static unsigned char bomb_blast_x;
+static unsigned char bomb_blast_y;
+static unsigned char level_patch_save_i;
 #pragma data-name(pop)
 #pragma bss-name(pop)
 
@@ -645,6 +706,10 @@ unsigned char oam_text(unsigned char x,unsigned char y,const unsigned char* str,
 
 void title_screen(void)
 {
+  // v124: clear leftover gameplay VRAM updates before title/menu drawing.
+  set_vram_update(NULL);
+  for(i=0;i<32;++i) update_list[i]=NT_UPD_EOF;
+
   // v24: title art now fills the screen, so do not shift it right.
   // This fixes the slightly clipped O in RETRO.
   scroll(0,240);
@@ -691,17 +756,47 @@ void title_screen(void)
     spr=oam_meta_spr(i-78,py+2,spr,sprEnemy2);
     spr=oam_meta_spr(i-112,py+1,spr,sprEnemy3);
 
-    // v102 publish build: no stage selector on title screen.
-    // START begins a normal game from Stage 1.
+    // v103 testing build: title-screen level select is enabled.
+    // LEFT/RIGHT changes one stage, UP/DOWN changes ten stages, SELECT resets.
+    // START begins on the displayed stage.
+    spr=oam_text(84,216,titleStageStr,6,spr,0);
+    spr=oam_spr(132,216,0x10+(start_level+1)/10,0,spr);
+    spr=oam_spr(140,216,0x10+(start_level+1)%10,0,spr);
     oam_hide_rest(spr);
 
     ptr=pad_trigger(0);
 
-    if(ptr&PAD_START)
+    if(ptr&PAD_RIGHT)
+    {
+      if(start_level+1<LEVELS_ALL) ++start_level; else start_level=0;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_LEFT)
+    {
+      if(start_level) --start_level; else start_level=LEVELS_ALL-1;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_UP)
+    {
+      if(start_level+10<LEVELS_ALL) start_level+=10; else start_level=LEVELS_ALL-1;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_DOWN)
+    {
+      if(start_level>=10) start_level-=10; else start_level=0;
+      sfx_play(SFX_ITEM,1);
+    }
+
+    if(ptr&PAD_SELECT)
     {
       start_level=0;
-      break;
+      sfx_play(SFX_ITEM,1);
     }
+
+    if(ptr&PAD_START) break;
 
     ++frame_cnt;
     iy+=dy;
@@ -1165,6 +1260,171 @@ void spawn_skull_orb(unsigned int idx)
   orb_y=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
 }
 
+
+void add_score(unsigned int points);
+
+unsigned char dist_close(unsigned char ax,unsigned char ay,unsigned char bx,unsigned char by,unsigned char range)
+{
+  if(ax>bx) px=ax-bx; else px=bx-ax;
+  if(ay>by) py=ay-by; else py=by-ay;
+
+  if(px<=range && py<=range) return TRUE;
+
+  return FALSE;
+}
+
+unsigned char bomb_at_index(unsigned int idx)
+{
+  if(bomb_state!=BOMB_FLOOR) return FALSE;
+
+  px=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  py=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+
+  if(bomb_x==px && bomb_y==py) return TRUE;
+
+  return FALSE;
+}
+
+unsigned char bomb_near_player(void)
+{
+  if(bomb_state!=BOMB_FLOOR) return FALSE;
+
+  if(dist_close((player_x[0]>>FP_BITS),(player_y[0]>>FP_BITS),
+                bomb_x,bomb_y,BOMB_PICKUP_RANGE)) return TRUE;
+
+  return FALSE;
+}
+
+void spawn_glitch_bomb(unsigned int idx)
+{
+  if(bomb_state||bomb_blast_timer) return;
+
+  bomb_state=BOMB_FLOOR;
+  bomb_x=(idx&(MAP_WDT-1))<<TILE_SIZE_BIT;
+  bomb_y=((idx>>MAP_WDT_BIT)+2)<<TILE_SIZE_BIT;
+  bomb_timer=BOMB_TIME;
+}
+
+void drop_carried_bomb(void)
+{
+  if(bomb_state!=BOMB_HELD) return;
+
+  bomb_state=BOMB_FLOOR;
+  bomb_x=player_x[0]>>FP_BITS;
+  bomb_y=player_y[0]>>FP_BITS;
+  sfx_play(SFX_ITEM,1);
+}
+
+
+void bomb_clear_wall_tile(unsigned char tx,unsigned char ty)
+{
+  // v120b: old generic wall clear disabled. Only bomb_break_single_wall may open the gate.
+  // Touch params so cc65 does not warn about unused tx/ty.
+  tx=tx;
+  ty=ty;
+}
+
+void bomb_break_walls(void)
+{
+  // v120: old radius breaker disabled. Do not break normal walls.
+}
+
+void bomb_break_single_wall(unsigned char tx,unsigned char ty)
+{
+  // v120: only one exact map cell can break: Stage 11 gate at x=9, y=5.
+  if((game_level%LEVEL_LAYOUTS)!=10) return;
+  if(tx!=9) return;
+  if(ty!=5) return;
+
+  ptr=5*MAP_WDT+9;
+  if(map[ptr]!=TILE_WALL) return;
+
+  map[ptr]=TILE_EMPTY;
+
+  // Clear one 2x2 wall metatile through the normal update list.
+  i=(5+2)<<1;
+  j=9<<1;
+
+  update_list[ 0]=MSB(NAMETABLE_A+(i<<5)+j);
+  update_list[ 1]=LSB(NAMETABLE_A+(i<<5)+j);
+  update_list[ 2]=TILE_EMPTY;
+
+  update_list[ 3]=MSB(NAMETABLE_A+(i<<5)+j+1);
+  update_list[ 4]=LSB(NAMETABLE_A+(i<<5)+j+1);
+  update_list[ 5]=TILE_EMPTY;
+
+  update_list[ 6]=MSB(NAMETABLE_A+((i+1)<<5)+j);
+  update_list[ 7]=LSB(NAMETABLE_A+((i+1)<<5)+j);
+  update_list[ 8]=TILE_EMPTY;
+
+  update_list[ 9]=MSB(NAMETABLE_A+((i+1)<<5)+j+1);
+  update_list[10]=LSB(NAMETABLE_A+((i+1)<<5)+j+1);
+  update_list[11]=TILE_EMPTY;
+}
+
+void bomb_break_nearby_walls(void)
+{
+  // v120: no real radius wall destruction.
+  // If the bomb explodes near the gate, open only the gate cell.
+  if((game_level%LEVEL_LAYOUTS)!=10) return;
+
+  px=bomb_blast_x>>TILE_SIZE_BIT;
+  py=(bomb_blast_y>>TILE_SIZE_BIT)-2;
+
+  if(px>=8 && px<=10 && py>=4 && py<=6) bomb_break_single_wall(9,5);
+}
+
+
+
+void explode_glitch_bomb(void)
+{
+  bomb_blast_x=bomb_x;
+  bomb_blast_y=bomb_y;
+  bomb_blast_timer=BOMB_BLAST_TIME;
+  bomb_state=BOMB_NONE;
+  bomb_timer=0;
+
+  sfx_play(SFX_RESPAWN2,1);
+
+  // v120: no radius wall breaking. Only the single Stage 11 gate can open.
+  bomb_break_nearby_walls();
+
+  //Clear nearby slimes. They are sent back to spawn with a short respawn delay.
+  for(ptr=1;ptr<player_all;++ptr)
+  {
+    if(!player_wait[ptr])
+    {
+      if(dist_close((player_x[ptr]>>FP_BITS),(player_y[ptr]>>FP_BITS),
+                    bomb_blast_x,bomb_blast_y,BOMB_RADIUS))
+      {
+        add_score(SCORE_ENEMY);
+        player_x[ptr]=enemy_spawn_x[ptr];
+        player_y[ptr]=enemy_spawn_y[ptr];
+        player_cnt[ptr]=0;
+        player_dir[ptr]=DIR_NONE;
+        player_wait[ptr]=90;
+      }
+    }
+  }
+}
+
+void update_glitch_bomb(void)
+{
+  if(bomb_state==BOMB_HELD)
+  {
+    bomb_x=player_x[0]>>FP_BITS;
+    bomb_y=player_y[0]>>FP_BITS;
+  }
+
+  if(bomb_state)
+  {
+    if(bomb_timer) --bomb_timer;
+    if(!bomb_timer) explode_glitch_bomb();
+  }
+
+  if(bomb_blast_timer) --bomb_blast_timer;
+}
+
 void activate_skull_clear(void)
 {
   skull_clear_timer=SKULL_CLEAR_TIME;
@@ -1276,18 +1536,191 @@ unsigned char draw_oam_text(unsigned char x,unsigned char y,const unsigned char*
 
 
 
+
+// v117: Stage 11 patching is done in code after loading a known-good Level 1 clone.
+// This avoids corrupt custom nametable exports while still giving Stage 11 a unique layout.
+void level11_put_meta(unsigned char mx,unsigned char my,unsigned char kind)
+{
+  // Convert collision-map cell to nametable address.
+  // Map row 0 begins at nametable row 4, and each map cell is 2x2 tiles.
+  i16=NAMETABLE_A+((my+2)<<6)+(mx<<1);
+
+  vram_adr(i16);
+
+  switch(kind)
+  {
+  case 1: // wall
+    vram_put(TILE_WALL);
+    vram_put(TILE_WALL+1);
+    vram_adr(i16+32);
+    vram_put(TILE_WALL+2);
+    vram_put(TILE_WALL+3);
+    break;
+
+  case 7: // v132 grey bomb gate
+    // Same exact wall block art as the normal walls.
+    // It is identified by a grey/white background palette quadrant.
+    vram_put(TILE_WALL);
+    vram_put(TILE_WALL+1);
+    vram_adr(i16+32);
+    vram_put(TILE_WALL+2);
+    vram_put(TILE_WALL+3);
+    break;
+
+  case 2: // chip/item
+    vram_put(TILE_ITEM);
+    vram_put(TILE_ITEM+1);
+    vram_adr(i16+32);
+    vram_put(TILE_ITEM+2);
+    vram_put(TILE_ITEM+3);
+    break;
+
+  case 3: // player
+    vram_put(TILE_PLAYER);
+    vram_put(TILE_EMPTY);
+    vram_adr(i16+32);
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    break;
+
+  case 4: // enemy 1
+    vram_put(TILE_ENEMY1);
+    vram_put(TILE_EMPTY);
+    vram_adr(i16+32);
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    break;
+
+  case 5: // enemy 2
+    vram_put(TILE_ENEMY2);
+    vram_put(TILE_EMPTY);
+    vram_adr(i16+32);
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    break;
+
+  case 6: // enemy 3
+    vram_put(TILE_ENEMY3);
+    vram_put(TILE_EMPTY);
+    vram_adr(i16+32);
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    break;
+
+  default: // empty floor
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    vram_adr(i16+32);
+    vram_put(TILE_EMPTY);
+    vram_put(TILE_EMPTY);
+    break;
+  }
+}
+
+
+void level11_fix_attrs_v124(void)
+{
+  // v124: force the Stage 11 playfield to one stable BG attribute.
+  // This removes the red/blue/purple bands inherited from cloned Level 1.
+  vram_adr(NAMETABLE_A+0x03c0+16);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+
+  vram_adr(NAMETABLE_A+0x03c0+24);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+
+  vram_adr(NAMETABLE_A+0x03c0+32);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+
+  vram_adr(NAMETABLE_A+0x03c0+40);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  // v126: only the gate quadrant uses palette 3; surrounding area stays palette 1.
+  vram_adr(NAMETABLE_A+0x03c0+3*8+4);
+  vram_put(0xd5);
+}
+
+
+void patch_level11_bomb_gate(void)
+{
+  // Clear only the same small footprint used by the old small levels.
+  // Do not touch the HUD/top rows.
+  for(py=2;py<9;++py)
+  {
+    for(px=0;px<16;++px)
+    {
+      level11_put_meta(px,py,0);
+    }
+  }
+
+  // Outer wall of the small level.
+  for(px=0;px<16;++px)
+  {
+    level11_put_meta(px,2,1);
+    level11_put_meta(px,8,1);
+  }
+
+  for(py=2;py<9;++py)
+  {
+    level11_put_meta(0,py,1);
+    level11_put_meta(15,py,1);
+  }
+
+  // Main divider. The red/discolored gate is the one block the bomb should open.
+  for(py=3;py<8;++py)
+  {
+    level11_put_meta(9,py,1);
+  }
+
+  level11_put_meta(9,5,7); // special bomb gate
+
+  // v142: fill Stage 11 with normal collectible chips/items like the regular maze stages.
+  // Leave only spawn spots, enemies, walls, gate, and the starter bomb spot empty.
+  for(py=3;py<8;++py)
+  {
+    for(px=1;px<15;++px)
+    {
+      if(px==9) continue;          // divider wall / grey bomb gate column
+      if(px==1 && py==3) continue; // player spawn
+      if(px==5 && py==7) continue; // slime 1 spawn
+      if(px==6 && py==7) continue; // slime 2 spawn
+      if(px==4 && py==6) continue; // starter bomb spawn
+      level11_put_meta(px,py,2);
+    }
+  }
+
+  // Player and enemies.
+  // v122: Stage 11 only uses 2 slimes while testing the bomb gate.
+  level11_put_meta(1,3,3);
+  level11_put_meta(5,7,4);
+  level11_put_meta(6,7,5);
+
+  // v118: gate marker is now a sprite overlay, not a background attribute.
+  level11_fix_attrs_v124();
+}
+
+
+
 //the main gameplay code
 
 void game_loop(void)
 {
   oam_clear();
 
-  // v49: 50 stages use 10 physical layouts in rotation.
-  // This gives more variety without huge nametable growth.
+  // v109: 50 stages now use 11 physical layouts in rotation.
+  // Stage 11 is unique; later builds can keep adding more unique maps.
   i=(game_level%LEVEL_LAYOUTS)<<1;
 
   vram_adr(NAMETABLE_A);
   vram_unrle(levelList[i]);          //unpack level nametable
+
+  // v121: Stage 11 patch uses temp variables internally, so preserve the levelList index.
+  // Losing this value corrupts the palette selection and causes the weird colors after retries.
+  level_patch_save_i=i;
+  if((game_level%LEVEL_LAYOUTS)==10) patch_level11_bomb_gate();
+  i=level_patch_save_i;
 
   vram_adr(NAMETABLE_A+0x0042);
   vram_write((unsigned char*)statsStr,27);   //add HUD line 1
@@ -1295,6 +1728,13 @@ void game_loop(void)
   vram_write((unsigned char*)statsStr2,27);  //add HUD line 2
 
   pal_bg(levelList[i+1]);             //set up background palette
+  // v126: Stage 11 uses BG palette 3 as a grey/white marker for the bomb gate.
+  if((game_level%LEVEL_LAYOUTS)==10)
+  {
+    pal_col(13,0x00);
+    pal_col(14,0x10);
+    pal_col(15,0x30);
+  }
   pal_spr(palGameSpr);               //set up sprites palette
 
   player_all=0;
@@ -1319,6 +1759,13 @@ void game_loop(void)
   held_power=0;
   dash_boost_timer=0;
   dash_boost_tiles=0;
+  bomb_state=BOMB_NONE;
+  bomb_timer=0;
+  bomb_blast_timer=0;
+  bomb_x=0;
+  bomb_y=0;
+  bomb_blast_x=0;
+  bomb_blast_y=0;
 
   //this loop reads the level nametable back from VRAM, row by row,
   //constructs game map, removes spawn points from the nametable,
@@ -1389,6 +1836,9 @@ void game_loop(void)
   // It cycles 3-8 required Code Chips instead of growing past CHIP_MAX.
   chips_required=CODE_CHIP_BASE+(game_level%6);
   items_count+=chips_required;
+
+  // v117: start Stage 11 with one bomb so the bomb-gate chip path can be tested.
+  if((game_level%LEVEL_LAYOUTS)==10) spawn_glitch_bomb(MAP_ADR(4,6));
 
   // v78: Add a 4th late-game Nightmare Slime, but not too early.
   // It now starts from Stage 31 onward instead of Stage 21, and it is slower.
@@ -1466,7 +1916,26 @@ void game_loop(void)
     }
     else
     {
+      // v145: draw bomb first in OAM. Bottom-shadow bomb with red fuse flash; both frames mirrored in both sprite banks.
+      spr=0;
+      if(bomb_state)
+      {
+        px=bomb_x;
+        py=bomb_y;
+        if(bomb_state==BOMB_HELD)
+        {
+          px=player_x[0]>>FP_BITS;
+          py=player_y[0]>>FP_BITS;
+          if(py>12) py-=12;
+        }
+
+        if(bomb_timer&16) spr=oam_meta_spr(px,py,spr,sprBombRed);
+        else              spr=oam_meta_spr(px,py,spr,sprBomb);
+      }
+
+      // Draw player/enemies after the bomb. Reserve 16 bytes when bomb is visible.
       spr=(player_all-1)<<4;
+      if(bomb_state) spr+=16;
 
       for(i=0;i<player_all;++i)
       {
@@ -1482,7 +1951,6 @@ void game_loop(void)
         }
         else if(i&&((frame_cnt&16)==0))
         {
-          // v8: enemy slime bob. Shape stays stable; only Y position hops 2 pixels.
           py-=2;
         }
 
@@ -1490,26 +1958,38 @@ void game_loop(void)
         spr-=16;
       }
 
-      //Draw pickup sprites. The power-up disks do not blink or swap frames.
       spr=player_all<<4;
+      if(bomb_state) spr+=16;
+
       for(ptr=0;ptr<SHOT_MAX;++ptr)
       {
         if(shot_active[ptr]) spr=oam_spr(shot_x[ptr],shot_y[ptr],SHOT_TILE,0,spr);
       }
+
       for(ptr=0;ptr<CHIP_MAX;++ptr)
       {
         if(chip_active[ptr])
         {
-          //Dropped collectibles no longer color-blink. They only do a tiny
-          //1-pixel bounce while staying a different palette from map items.
           spr=oam_meta_spr(chip_x[ptr],chip_y[ptr]-((frame_cnt>>3)&1),spr,sprCodeChip);
         }
       }
+
       if(orb_active)
       {
         if(orb_type==POWER_LIGHTNING)        spr=oam_meta_spr(orb_x,orb_y,spr,sprLightningOrb);
         else if(orb_type==POWER_SKULL_CLEAR) spr=oam_meta_spr(orb_x,orb_y,spr,sprSkullOrb);
         else                                 spr=oam_meta_spr(orb_x,orb_y,spr,sprOrb);
+      }
+
+      if(bomb_blast_timer)
+      {
+        px=bomb_blast_x+4;
+        py=bomb_blast_y+4;
+        spr=oam_spr(px,py,SHOT_TILE,0,spr);
+        spr=oam_spr(px+8,py,SHOT_TILE,0,spr);
+        spr=oam_spr(px-8,py,SHOT_TILE,0,spr);
+        spr=oam_spr(px,py+8,SHOT_TILE,0,spr);
+        spr=oam_spr(px,py-8,SHOT_TILE,0,spr);
       }
 
       oam_hide_rest(spr);
@@ -1564,6 +2044,12 @@ void game_loop(void)
       {
         //Restore the current level palettes when returning to play.
         pal_bg(levelList[((game_level%LEVEL_LAYOUTS)<<1)+1]);
+        if((game_level%LEVEL_LAYOUTS)==10)
+        {
+          pal_col(13,0x00);
+          pal_col(14,0x10);
+          pal_col(15,0x30);
+        }
         pal_spr(palGameSpr);
         bright=4;
         pal_bright(4);
@@ -1598,15 +2084,27 @@ void game_loop(void)
       if(!skull_clear_timer) sfx_play(SFX_START,0);
     }
 
-    // B gives the horn guy a short speed boost while moving.
-    // v61: cap each boost to at most 2 completed tile moves, so it feels
-    // like a quick burst instead of a long turbo mode.
+    // B is now context-sensitive in this testing build.
+    // Near a Glitch Bomb: pick it up. Carrying one: drop it.
+    // Otherwise, B keeps the normal short dash.
     if(i&PAD_B)
     {
-      dash_boost_timer=DASH_BOOST_TIME;
-      dash_boost_tiles=DASH_BOOST_MAX_TILES;
-      player_speed[0]=DASH_BOOST_SPEED;
-      sfx_play(SFX_ITEM,1);
+      if(bomb_state==BOMB_HELD)
+      {
+        drop_carried_bomb();
+      }
+      else if(bomb_near_player())
+      {
+        bomb_state=BOMB_HELD;
+        sfx_play(SFX_ITEM,1);
+      }
+      else
+      {
+        dash_boost_timer=DASH_BOOST_TIME;
+        dash_boost_tiles=DASH_BOOST_MAX_TILES;
+        player_speed[0]=DASH_BOOST_SPEED;
+        sfx_play(SFX_ITEM,1);
+      }
     }
 
     if(dash_boost_timer && dash_boost_tiles)
@@ -1624,7 +2122,7 @@ void game_loop(void)
     //CHR bank switching animation with different speed for background and sprites
 
     bank_bg((frame_cnt>>4)&1);
-    bank_spr((frame_cnt>>3)&1);
+    bank_spr((frame_cnt>>3)&1); // bomb normal/red frames are mirrored in both sprite banks in v139
 
     //Lightning Disk auto-shoots in the horn guy's current direction.
     if(lightning_timer)
@@ -1639,6 +2137,7 @@ void game_loop(void)
     }
 
     update_shots();
+    update_glitch_bomb();
 
     //Frozen Disk: enemies freeze in place, music keeps playing, slimes flash icy blue/white,
     //and a chime plays once per second until the timer runs out.
@@ -1937,7 +2436,7 @@ void game_loop(void)
           //Enemies can start dropping the Frozen Disk and required purple
           //Code Chips after the level has been active briefly. This keeps the
           //feature obvious instead of hiding it until every green cart is gone.
-          if(frame_cnt>90&&map[i16]==TILE_EMPTY&&!chip_at_index(i16)&&!orb_at_index(i16))
+          if(frame_cnt>90&&map[i16]==TILE_EMPTY&&!chip_at_index(i16)&&!orb_at_index(i16)&&!bomb_at_index(i16))
           {
             //First power drops are Frozen Disk, Lightning Bolt, then Skull Clear.
             if(!orb_spawned)
@@ -1959,6 +2458,11 @@ void game_loop(void)
             else if(chips_spawned<chips_required&&!(rand8()%CODE_CHIP_DROP_CHANCE))
             {
               spawn_code_chip(i16);
+            }
+            // v104 testing: after the required drops, slimes can drop one blinking Glitch Bomb.
+            else if(!bomb_state&&!bomb_blast_timer&&!(rand8()%BOMB_DROP_CHANCE))
+            {
+              spawn_glitch_bomb(i16);
             }
           }
 
