@@ -5,7 +5,9 @@ _music_data:
 	.word @instruments
 	.word @samples-3
 	.word @song0ch0,@song0ch1,@song0ch2,@song0ch3,@song0ch4,307,256
-	.word @song1ch0,@song1ch1,@song1ch2,@song1ch3,@song1ch4,307,256
+	; v160 ROM save: old stock gameplay song is no longer used.
+	; Gameplay uses music_data_main, so song slot 1 safely points to silence.
+	.word @song0ch4,@song0ch4,@song0ch4,@song0ch4,@song0ch4,307,256
 	.word @song2ch0,@song2ch1,@song2ch2,@song2ch3,@song2ch4,307,256
 	.word @song3ch0,@song3ch1,@song3ch2,@song3ch3,@song3ch4,307,256
 	.word @song4ch0,@song4ch1,@song4ch2,@song4ch3,@song4ch4,307,256
@@ -114,112 +116,8 @@ _music_data:
 	.word @song0ch4loop
 
 
-@song1ch0:
-	.byte $fb,$04
-@song1ch0loop:
-@ref10:
-	.byte $9f
-@ref11:
-	.byte $9f
-@ref12:
-	.byte $9f
-@ref13:
-	.byte $9f
-@ref14:
-	.byte $9f
-@ref15:
-	.byte $9f
-@ref16:
-	.byte $9f
-@ref17:
-	.byte $9f
-	.byte $fd
-	.word @song1ch0loop
-
-@song1ch1:
-@song1ch1loop:
-@ref18:
-	.byte $9f
-@ref19:
-	.byte $9f
-@ref20:
-	.byte $9f
-@ref21:
-	.byte $9f
-@ref22:
-	.byte $9f
-@ref23:
-	.byte $9f
-@ref24:
-	.byte $9f
-@ref25:
-	.byte $9f
-	.byte $fd
-	.word @song1ch1loop
-
-@song1ch2:
-@song1ch2loop:
-@ref26:
-	.byte $80,$28,$00,$83,$28,$00,$27,$90,$32,$00,$8b
-@ref27:
-	.byte $80,$24,$00,$83,$25,$23,$90,$32,$00,$8b
-@ref28:
-	.byte $80,$28,$00,$83,$82,$28,$00,$27,$90,$32,$00,$83,$80,$26,$00,$83
-@ref29:
-	.byte $24,$00,$83,$25,$90,$32,$80,$22,$83,$00,$89
-@ref30:
-	.byte $28,$00,$83,$28,$00,$27,$90,$32,$00,$83,$80,$26,$00,$83
-@ref31:
-	.byte $24,$00,$83,$25,$23,$90,$32,$00,$8b
-@ref32:
-	.byte $80,$1e,$00,$83,$1e,$00,$23,$90,$32,$00,$83,$80,$25,$90,$32,$80
-	.byte $28
-@ref33:
-	.byte $87,$00,$95
-	.byte $fd
-	.word @song1ch2loop
-
-@song1ch3:
-@song1ch3loop:
-@ref34:
-	.byte $8a,$1f,$1f,$82,$1f,$8a,$1f,$90,$16,$85,$82,$1f,$8a,$1e,$81
-@ref35:
-	.byte $83,$1f,$82,$1f,$8a,$1f,$90,$16,$85,$8a,$1e,$85
-@ref36:
-	.byte $1f,$1f,$82,$1f,$8a,$1f,$90,$16,$85,$82,$1f,$8a,$1e,$81
-@ref37:
-	.byte $83,$1f,$82,$1f,$90,$16,$89,$8a,$1f,$1e,$81
-	.byte $ff,$09
-	.word @ref36
-	.byte $ff,$08
-	.word @ref35
-@ref40:
-	.byte $1f,$1f,$82,$1f,$8a,$1f,$90,$16,$85,$17,$16,$81
-@ref41:
-	.byte $87,$8a,$1f,$1f,$82,$1e,$85,$8a,$1f,$1e,$81
-	.byte $fd
-	.word @song1ch3loop
-
-@song1ch4:
-@song1ch4loop:
-@ref42:
-	.byte $9f
-@ref43:
-	.byte $9f
-@ref44:
-	.byte $9f
-@ref45:
-	.byte $9f
-@ref46:
-	.byte $9f
-@ref47:
-	.byte $9f
-@ref48:
-	.byte $9f
-@ref49:
-	.byte $9f
-	.byte $fd
-	.word @song1ch4loop
+; v160: Removed unused original song 1 data to free PRG ROM.
+; MUSIC_GAME is not used by game.c anymore; real gameplay music is music_data_main.
 
 
 @song2ch0:

@@ -5,7 +5,7 @@
 //
 // Major new features added:
 // - Full Retro Replay visual retheme with new title screen, HUD, sprites, and palettes.
-// - 50-stage structure using 11 layouts; Stage 11 has 2 slimes, grey gate, bottom-shadow fuse-flash bomb art, and a chip-filled test layout.
+// - 50-stage structure using 14 layouts; Level 14 micro fit test.
 // - Testing-only title-screen level select is enabled in this build.
 // - GET READY countdown before each stage.
 // - Level clear, well done, game over, score, lives, items, power HUD, and high score screens.
@@ -53,7 +53,7 @@ extern const void music_data_untitled[];
 #include "level8_nam.h"
 #include "level9_nam.h"
 #include "level10_nam.h"
-#include "level11_nam.h"
+// v160 ROM save: level11_nam.h was byte-identical to level1_nam.h, so use level1_nam as the patch base.
 
 //game uses 12:4 fixed point calculations for enemy movements
 
@@ -148,7 +148,7 @@ extern const void music_data_untitled[];
 
 //number of levels in the game
 
-#define LEVEL_LAYOUTS  11
+#define LEVEL_LAYOUTS  14
 #define LEVELS_ALL     50
 
 //numbers for screens that are displayed by the same function as the
@@ -268,15 +268,7 @@ const unsigned char sprCodeChip[]={
   128
 };
 
-//Dropped item uses one steady palette so it does not blink/change colors.
-//It still bobs in the draw code so it feels alive without tinting the floor.
-const unsigned char sprCodeChipGlow[]={
-  0, 0,0x51,3,
-  8, 0,0x52,3,
-  0, 8,0x53,3,
-  8, 8,0x54,3,
-  128
-};
+// sprCodeChip was identical to sprCodeChip; reuse the same metasprite to save ROM.
 
 //Sprite-based Frozen Disk pickup.
 const unsigned char sprOrb[]={
@@ -324,16 +316,7 @@ const unsigned char sprBombRed[]={
   128
 };
 
-// v118: visual marker for the only breakable Stage 11 gate.
-// Drawn as a sprite overlay so the background palette does not discolor the whole map.
-const unsigned char sprBreakGate[]={
-  0, 0,GATE_TILE_A,0,
-  8, 0,GATE_TILE_B,0,
-  0, 8,GATE_TILE_C,0,
-  8, 8,GATE_TILE_D,0,
-  128
-};
-
+// v167 ROM save: removed unused sprBreakGate metasprite. Gate markers are background tiles now.
 
 //list of metasprites
 
@@ -354,7 +337,10 @@ level7_nam,palGame2,
 level8_nam,palGame3,
 level9_nam,palGame4,
 level10_nam,palGame5,
-level11_nam,palGame3
+level1_nam,palGame3,
+level1_nam,palGame1,
+level1_nam,palGame2,
+level1_nam,palGame4
 };
 
 
@@ -398,7 +384,7 @@ const unsigned char statsStr2[27]={
 //list of screens such as level number, game over, and well done
 //contains pointers to the packed nametables
 
-const unsigned char* screenList[3]={ level_nam,gameover_nam,welldone_nam };
+const unsigned char* const screenList[3]={ level_nam,gameover_nam,welldone_nam };
 
 //list of sub songs for corresponding screens
 
@@ -407,13 +393,13 @@ const unsigned char screenMusicList[3]={MUSIC_LEVEL,MUSIC_GAME_OVER,MUSIC_WELL_D
 //Level clear splash text, using the same built-in font tile mapping as the HUD.
 //0x00 is space, 0x21 is A, 0x22 is B, etc.
 const unsigned char levelClearStr[5]={0x23,0x2c,0x25,0x21,0x32}; //CLEAR
-const unsigned char nextLevelStr[10]={0x27,0x25,0x34,0x00,0x32,0x25,0x21,0x24,0x39,0x01}; //GET READY!
+const unsigned char nextLevelStr[6]={0x32,0x25,0x21,0x24,0x39,0x01}; //READY! v166: shorter to save PRG
 const unsigned char clearScoreStr[6]={0x33,0x23,0x2f,0x32,0x25,0x00}; //SCORE 
-const unsigned char clearUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x00,0x32,0x25,0x30,0x2c,0x21,0x39,0x00,0x23,0x2f,0x2d}; //RETRO REPLAY COM
+// v161: level clear URL reuses gameOverUrlStr to save 16 PRG bytes.
 
 //Game over score text. 0x00 is space, A=0x21, 0x0d is dash, 0x0e is dot.
-const unsigned char gameOverScoreStr[5]={0x33,0x23,0x2f,0x32,0x25}; //SCORE
-const unsigned char gameOverHighStr[4]={0x28,0x29,0x27,0x28}; //HIGH
+// v161: game over SCORE label reuses clearScoreStr first 5 bytes to save 5 PRG bytes.
+const unsigned char gameOverHighStr[2]={0x28,0x29}; //HI v166: shorter to save PRG
 const unsigned char gameOverUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x0d,0x32,0x25,0x30,0x2c,0x21,0x39,0x0e,0x23,0x2f,0x2d}; //RETRO-REPLAY.COM
 
 //forward declaration used by game over / level clear score displays
@@ -423,21 +409,19 @@ void put_score_num(unsigned int adr,unsigned int num);
 // Pause overlay text, drawn with sprites so gameplay nametable stays untouched.
 // Uses the built-in tile font mapping: A=0x21, space=0x00, '-'=0x0d, '.'=0x0e.
 const unsigned char pauseStr[6]={0x30,0x21,0x35,0x33,0x25,0x24}; //PAUSED
-const unsigned char pauseResumeStr[14]={0x30,0x32,0x25,0x33,0x33,0x00,0x33,0x34,0x21,0x32,0x34,0x00,0x01,0x01}; //PRESS START!!
-const unsigned char pauseUrlStr[16]={0x32,0x25,0x34,0x32,0x2f,0x0d,0x32,0x25,0x30,0x2c,0x21,0x39,0x0e,0x23,0x2f,0x2d}; //RETRO-REPLAY.COM
+// v161: removed unused pauseResumeStr to save 14 PRG bytes.
+// v160: pause URL reuses gameOverUrlStr to save 16 ROM bytes.
 
 // v80 pause power legend. Text is sprite-drawn; no CHR changes.
 // Tile font mapping: A=0x21, B=0x22 ... Z=0x3a, space=0x00.
-const unsigned char pauseLegendStr[10]={0x30,0x37,0x32,0x00,0x2c,0x25,0x27,0x25,0x2e,0x24}; //PWR LEGEND
-const unsigned char pauseFreezeStr[6]={0x26,0x32,0x25,0x25,0x3a,0x25}; //FREEZE
+const unsigned char pauseLegendStr[5]={0x30,0x2f,0x37,0x25,0x32}; //POWER v166: shorter to save PRG
+const unsigned char pauseFreezeStr[3]={0x29,0x23,0x25}; //ICE v166: shorter to save PRG
 const unsigned char pauseZapStr[3]={0x3a,0x21,0x30}; //ZAP
-const unsigned char pauseClearStr[5]={0x23,0x2c,0x25,0x21,0x32}; //CLEAR
+// v160: pause CLEAR text reuses levelClearStr to save 5 ROM bytes.
 const unsigned char pauseChipStr[4]={0x23,0x28,0x29,0x30}; //CHIP
-const unsigned char pauseUseDashStr[12]={0x21,0x00,0x35,0x33,0x25,0x00,0x22,0x00,0x24,0x21,0x33,0x28}; //A USE B DASH
+const unsigned char pauseUseDashStr[7]={0x21,0x00,0x35,0x33,0x25,0x00,0x22}; //A USE B v166: shorter to save PRG
 
-// Title-screen level select text. Drawn with sprites so the title nametable
-// does not have to be rewritten while rendering is on.
-const unsigned char titleStageStr[6]={0x33,0x34,0x21,0x27,0x25,0x00}; //STAGE 
+// v167 ROM save: removed title STG label; tiny digits remain.
 
 //large 1-5 numbers nametable definitons, 2x3 tiles each
 //numbers were drawn one next to the other in NES Screen Tool,
@@ -541,9 +525,13 @@ static int iy,dy;
 
 static unsigned char dir[4];
 
-//this array is used to convert nametable into game map, row by row
-
+//this array is used to convert nametable into game map, row by row.
+// It is only needed while loading a stage, so keep it out of ZEROPAGE.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
 static unsigned char nameRow[32];
+#pragma data-name(pop)
+#pragma bss-name(pop)
 
 //number of moving characters on current level
 
@@ -630,8 +618,14 @@ static unsigned char level_patch_save_i;
 #pragma data-name(pop)
 #pragma bss-name(pop)
 
+// Spawn positions are mostly used on deaths/respawns, not every hot movement step.
+// Keep them in normal RAM to free 20 bytes of scarce zero page.
+#pragma bss-name(push,"BSS")
+#pragma data-name(push,"DATA")
 static unsigned int  enemy_spawn_x[PLAYER_MAX];
 static unsigned int  enemy_spawn_y[PLAYER_MAX];
+#pragma data-name(pop)
+#pragma bss-name(pop)
 
 //game state variables
 
@@ -756,12 +750,10 @@ void title_screen(void)
     spr=oam_meta_spr(i-78,py+2,spr,sprEnemy2);
     spr=oam_meta_spr(i-112,py+1,spr,sprEnemy3);
 
-    // v103 testing build: title-screen level select is enabled.
-    // LEFT/RIGHT changes one stage, UP/DOWN changes ten stages, SELECT resets.
-    // START begins on the displayed stage.
-    spr=oam_text(84,216,titleStageStr,6,spr,0);
-    spr=oam_spr(132,216,0x10+(start_level+1)/10,0,spr);
-    spr=oam_spr(140,216,0x10+(start_level+1)%10,0,spr);
+    // v167 ROM save: keep tiny test level select, but remove label/up/down/select code.
+    // LEFT/RIGHT changes one stage. START begins on displayed stage.
+    spr=oam_spr(120,216,0x10+(start_level+1)/10,0,spr);
+    spr=oam_spr(128,216,0x10+(start_level+1)%10,0,spr);
     oam_hide_rest(spr);
 
     ptr=pad_trigger(0);
@@ -775,24 +767,6 @@ void title_screen(void)
     if(ptr&PAD_LEFT)
     {
       if(start_level) --start_level; else start_level=LEVELS_ALL-1;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_UP)
-    {
-      if(start_level+10<LEVELS_ALL) start_level+=10; else start_level=LEVELS_ALL-1;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_DOWN)
-    {
-      if(start_level>=10) start_level-=10; else start_level=0;
-      sfx_play(SFX_ITEM,1);
-    }
-
-    if(ptr&PAD_SELECT)
-    {
-      start_level=0;
       sfx_play(SFX_ITEM,1);
     }
 
@@ -859,11 +833,11 @@ void show_screen(unsigned char num)
     if(game_score>high_score) high_score=game_score;
 
     vram_adr(NAMETABLE_A+0x0228);
-    vram_write((unsigned char*)gameOverScoreStr,5);
+    vram_write((unsigned char*)clearScoreStr,5);
     put_score_num(NAMETABLE_A+0x022f,game_score);
 
     vram_adr(NAMETABLE_A+0x0269);
-    vram_write((unsigned char*)gameOverHighStr,4);
+    vram_write((unsigned char*)gameOverHighStr,2);
     put_score_num(NAMETABLE_A+0x026f,high_score);
 
     vram_adr(NAMETABLE_A+0x02ca);
@@ -920,7 +894,7 @@ void show_level_clear(unsigned char num)
   vram_adr(NAMETABLE_A);
   vram_unrle(level_nam);
 
-  // v58: show the true level number big on the LEVEL CLEAR screen.
+  // v58: show the true level number big on the CLEAR screen.
   put_big_level_num(NAMETABLE_A+0x0194,num+1);
   put_big_level_num_purple_attrs();
 
@@ -936,12 +910,12 @@ void show_level_clear(unsigned char num)
   if(num+1<LEVELS_ALL)
   {
     vram_adr(NAMETABLE_A+0x02ab);
-    vram_write((unsigned char*)nextLevelStr,10);
+    vram_write((unsigned char*)nextLevelStr,6);
   }
 
   //Small Retro Replay mark near the bottom, high enough to avoid clipping.
   vram_adr(NAMETABLE_A+0x0328);
-  vram_write((unsigned char*)clearUrlStr,16);
+  vram_write((unsigned char*)gameOverUrlStr,16);
 
   pal_col(2,0x21);
   pal_col(3,0x30);
@@ -1000,7 +974,7 @@ void show_ready_countdown(void)
 
     //GET READY!
     vram_adr(NAMETABLE_A+0x00ea);
-    vram_write((unsigned char*)nextLevelStr,10);
+    vram_write((unsigned char*)nextLevelStr,6);
 
     //large countdown number centered below it
     j=(wait-1)<<1;
@@ -1016,7 +990,7 @@ void show_ready_countdown(void)
 
     //small brand mark at the bottom
     vram_adr(NAMETABLE_A+0x0328);
-    vram_write((unsigned char*)pauseUrlStr,16);
+    vram_write((unsigned char*)gameOverUrlStr,16);
 
     pal_bg(palGame1);
     pal_spr(palGameSpr);
@@ -1038,7 +1012,7 @@ void show_ready_countdown(void)
   vram_put(0x2f); //O
   vram_put(0x01); //!
   vram_adr(NAMETABLE_A+0x0328);
-  vram_write((unsigned char*)pauseUrlStr,16);
+  vram_write((unsigned char*)gameOverUrlStr,16);
   ppu_on_all();
   sfx_play(SFX_START,0);
   delay(20);
@@ -1199,6 +1173,8 @@ unsigned char chip_at_index(unsigned int idx)
 //back to empty so only the chip sprite changes color or glows.
 void spawn_code_chip(unsigned int idx)
 {
+  // v146b: do not leave extra chip sprites once the objective is already satisfied.
+  if(items_collected>=items_count) return;
   if(chip_at_index(idx)) return;
 
   for(ptr=0;ptr<CHIP_MAX;++ptr)
@@ -1316,34 +1292,41 @@ void drop_carried_bomb(void)
 }
 
 
-void bomb_clear_wall_tile(unsigned char tx,unsigned char ty)
-{
-  // v120b: old generic wall clear disabled. Only bomb_break_single_wall may open the gate.
-  // Touch params so cc65 does not warn about unused tx/ty.
-  tx=tx;
-  ty=ty;
-}
-
-void bomb_break_walls(void)
-{
-  // v120: old radius breaker disabled. Do not break normal walls.
-}
 
 void bomb_break_single_wall(unsigned char tx,unsigned char ty)
 {
-  // v120: only one exact map cell can break: Stage 11 gate at x=9, y=5.
-  if((game_level%LEVEL_LAYOUTS)!=10) return;
-  if(tx!=9) return;
-  if(ty!=5) return;
+  // v148: break only exact bomb-gate cells.
+  // Stage 11: one gate at x9,y5.
+  // Stage 12: two gates at x5,y6 and x10,y8.
+  // Stage 13: one dead-end gate at x9,y6.
+  // Stage 14: two side-room gates at x3,y6 and x12,y6.
+  if((game_level%LEVEL_LAYOUTS)==10)
+  {
+    if(tx!=9) return;
+    if(ty!=5) return;
+  }
+  else if((game_level%LEVEL_LAYOUTS)==11)
+  {
+    if(!((tx==5 && ty==6) || (tx==10 && ty==8))) return;
+  }
+  else if((game_level%LEVEL_LAYOUTS)==12)
+  {
+    if(!(tx==9 && ty==6)) return;
+  }
+  else if((game_level%LEVEL_LAYOUTS)==13)
+  {
+    if(!((tx==4 && ty==6) || (tx==11 && ty==6))) return;
+  }
+  else return;
 
-  ptr=5*MAP_WDT+9;
+  ptr=ty*MAP_WDT+tx;
   if(map[ptr]!=TILE_WALL) return;
 
   map[ptr]=TILE_EMPTY;
 
   // Clear one 2x2 wall metatile through the normal update list.
-  i=(5+2)<<1;
-  j=9<<1;
+  i=(ty+2)<<1;
+  j=tx<<1;
 
   update_list[ 0]=MSB(NAMETABLE_A+(i<<5)+j);
   update_list[ 1]=LSB(NAMETABLE_A+(i<<5)+j);
@@ -1364,14 +1347,29 @@ void bomb_break_single_wall(unsigned char tx,unsigned char ty)
 
 void bomb_break_nearby_walls(void)
 {
-  // v120: no real radius wall destruction.
-  // If the bomb explodes near the gate, open only the gate cell.
-  if((game_level%LEVEL_LAYOUTS)!=10) return;
-
+  // v148: no real radius wall destruction.
+  // If the bomb explodes near a gate, open only that exact gate cell.
   px=bomb_blast_x>>TILE_SIZE_BIT;
   py=(bomb_blast_y>>TILE_SIZE_BIT)-2;
 
-  if(px>=8 && px<=10 && py>=4 && py<=6) bomb_break_single_wall(9,5);
+  if((game_level%LEVEL_LAYOUTS)==10)
+  {
+    if(px>=8 && px<=10 && py>=4 && py<=6) bomb_break_single_wall(9,5);
+  }
+  else if((game_level%LEVEL_LAYOUTS)==11)
+  {
+    if(px>=4 && px<=6 && py>=5 && py<=7) bomb_break_single_wall(5,6);
+    if(px>=9 && px<=11 && py>=7 && py<=9) bomb_break_single_wall(10,8);
+  }
+  else if((game_level%LEVEL_LAYOUTS)==12)
+  {
+    if(px>=7 && px<=10 && py>=4 && py<=8) bomb_break_single_wall(9,6);
+  }
+  else if((game_level%LEVEL_LAYOUTS)==13)
+  {
+    if(px>=3 && px<=5 && py>=5 && py<=7) bomb_break_single_wall(4,6);
+    if(px>=10 && px<=12 && py>=5 && py<=7) bomb_break_single_wall(11,6);
+  }
 }
 
 
@@ -1545,10 +1543,29 @@ void level11_put_meta(unsigned char mx,unsigned char my,unsigned char kind)
   // Map row 0 begins at nametable row 4, and each map cell is 2x2 tiles.
   i16=NAMETABLE_A+((my+2)<<6)+(mx<<1);
 
+  // v156: keep the collision/object map in sync while runtime-patching.
+  // Without this, Stage 13 could start with zero counted chips on first load.
+  ptr=my*MAP_WDT+mx;
+  if(kind==1 || kind==7) map[ptr]=TILE_WALL;
+  else if(kind==2) map[ptr]=TILE_ITEM;
+  else if(kind==3) map[ptr]=TILE_PLAYER;
+  else if(kind==4) map[ptr]=TILE_ENEMY1;
+  else if(kind==5) map[ptr]=TILE_ENEMY2;
+  else if(kind==6) map[ptr]=TILE_ENEMY3;
+  else map[ptr]=TILE_EMPTY;
+
   vram_adr(i16);
 
   switch(kind)
   {
+  case 8: // v156 black void outside shaped maps
+    vram_put(0x00);
+    vram_put(0x00);
+    vram_adr(i16+32);
+    vram_put(0x00);
+    vram_put(0x00);
+    break;
+
   case 1: // wall
     vram_put(TILE_WALL);
     vram_put(TILE_WALL+1);
@@ -1620,23 +1637,10 @@ void level11_put_meta(unsigned char mx,unsigned char my,unsigned char kind)
 
 void level11_fix_attrs_v124(void)
 {
-  // v124: force the Stage 11 playfield to one stable BG attribute.
-  // This removes the red/blue/purple bands inherited from cloned Level 1.
-  vram_adr(NAMETABLE_A+0x03c0+16);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
+  // v158: compact attr cleanup. One loop replaces the old repeated vram_put block.
+  vram_adr(NAMETABLE_A+0x03c0);
+  for(i=0;i<64;++i) vram_put(0x55);
 
-  vram_adr(NAMETABLE_A+0x03c0+24);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-
-  vram_adr(NAMETABLE_A+0x03c0+32);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-
-  vram_adr(NAMETABLE_A+0x03c0+40);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
-  vram_put(0x55); vram_put(0x55); vram_put(0x55); vram_put(0x55);
   // v126: only the gate quadrant uses palette 3; surrounding area stays palette 1.
   vram_adr(NAMETABLE_A+0x03c0+3*8+4);
   vram_put(0xd5);
@@ -1702,6 +1706,241 @@ void patch_level11_bomb_gate(void)
 }
 
 
+// v147c: one safe big runtime-patched layout for Stage 12.
+// This is intentionally small-code and tested-style, unlike the broken v147/v147b 12-20 patcher.
+void patch_level12_big_safe(void)
+{
+  // v148: cleaner Stage 12 layout with two bomb-gated chip rooms.
+  // Starts lower than the HUD and avoids the full-screen color-band weirdness.
+
+  // Clear gameplay map area first.
+  for(py=0;py<13;++py)
+  {
+    for(px=0;px<16;++px) level11_put_meta(px,py,0);
+  }
+
+  // Outer border, slightly lower/safe: rows 1-11.
+  for(px=0;px<16;++px)
+  {
+    level11_put_meta(px,1,1);
+    level11_put_meta(px,11,1);
+  }
+
+  for(py=1;py<12;++py)
+  {
+    level11_put_meta(0,py,1);
+    level11_put_meta(15,py,1);
+  }
+
+  // Two vertical walls that create left, center, and right zones.
+  // Each wall has one bomb gate.
+  // v150: gates moved down one cell so the grey marker matches the actual break cell.
+  for(py=2;py<11;++py)
+  {
+    if(py!=6) level11_put_meta(5,py,1);
+    if(py!=8) level11_put_meta(10,py,1);
+  }
+
+  // v153: Level-11-style bomb gates: normal wall art, grey/white BG palette quadrant.
+  level11_put_meta(5,6,7);
+  level11_put_meta(10,8,7);
+
+  // Fill accessible and gated areas with normal collectible chips.
+  // Leave player, enemy, and bomb spawn cells empty.
+  for(py=2;py<11;++py)
+  {
+    for(px=1;px<15;++px)
+    {
+      if(px==5 || px==10) continue;   // walls/gates
+      if(px==1 && py==2) continue;    // player
+      if(px==3 && py==8) continue;    // starter bomb
+      if(px==8 && py==5) continue;    // future bomb/drop space
+      if(px==13 && py==2) continue;   // enemy 1
+      if(px==13 && py==10) continue;  // enemy 2
+      if(px==3 && py==9) continue;    // enemy 3 in first bay
+      level11_put_meta(px,py,2);
+    }
+  }
+
+  // Re-draw walls/gates after chip fill.
+  for(py=2;py<11;++py)
+  {
+    if(py!=6) level11_put_meta(5,py,1);
+    if(py!=8) level11_put_meta(10,py,1);
+  }
+  level11_put_meta(5,6,7);
+  level11_put_meta(10,8,7);
+
+  // Player and enemies.
+  level11_put_meta(1,2,3);
+  level11_put_meta(13,2,4);
+  level11_put_meta(13,10,5);
+  level11_put_meta(3,9,6); // v149: slime inside first bay so bombs can happen there
+
+  // Stronger full attribute cleanup: all visible gameplay attributes use palette 1.
+  // Then only gate quadrants use palette 3 for grey/white gate blocks.
+  vram_adr(NAMETABLE_A+0x03c0);
+  for(i=0;i<64;++i) vram_put(0x55);
+
+  // v153: Level-11-style grey gate attributes.
+  // Normal playfield uses palette 1 (0x55). Only the exact 16x16 gate quadrant is switched to palette 3.
+  // Gate 1 at map x5,y6 -> nametable tiles x10-11,y16-17 -> attr row 4,col 2, top-right quadrant.
+  vram_adr(NAMETABLE_A+0x03c0+4*8+2);
+  vram_put(0x5d);
+
+  // Gate 2 at map x10,y8 -> nametable tiles x20-21,y20-21 -> attr row 5,col 5, top-left quadrant.
+  vram_adr(NAMETABLE_A+0x03c0+5*8+5);
+  vram_put(0x57);
+}
+
+
+
+// v154b: compact Stage 13. Dead-end passage with one bomb-gated wall.
+void patch_level13_dead_end_gate(void)
+{
+  // v156: black void outside, stable map sync, exact grey gate.
+  // Clear whole gameplay patch area to black/blank first.
+  for(py=0;py<13;++py)
+  {
+    for(px=0;px<16;++px) level11_put_meta(px,py,8);
+  }
+
+  // Build a 3/4-screen arena, leaving outside as black void.
+  for(py=2;py<12;++py)
+  {
+    for(px=1;px<15;++px) level11_put_meta(px,py,0);
+  }
+
+  // Arena border.
+  for(px=1;px<15;++px)
+  {
+    level11_put_meta(px,2,1);
+    level11_put_meta(px,11,1);
+  }
+  for(py=2;py<12;++py)
+  {
+    level11_put_meta(1,py,1);
+    level11_put_meta(14,py,1);
+  }
+
+  // Dead-end wall and gate into the other side.
+  for(py=3;py<11;++py) level11_put_meta(9,py,1);
+  level11_put_meta(9,6,7); // visible grey gate, exact break target
+
+  // Small interior blocks.
+  for(px=3;px<9;++px) level11_put_meta(px,5,1);
+  level11_put_meta(5,5,0);
+  level11_put_meta(7,5,0);
+  level11_put_meta(4,9,1);
+  level11_put_meta(5,9,1);
+  level11_put_meta(12,4,1);
+  level11_put_meta(12,9,1);
+
+  // Fill chips after map has been correctly updated by level11_put_meta().
+  for(py=3;py<11;++py)
+  {
+    for(px=2;px<14;++px)
+    {
+      if(px==2 && py==3) continue;   // player
+      if(px==3 && py==8) continue;   // slime
+      if(px==4 && py==8) continue;   // starter bomb
+      if(px==12 && py==5) continue;  // slime
+      if(px==12 && py==10) continue; // slime
+      ptr=py*MAP_WDT+px;
+      if(map[ptr]==TILE_EMPTY) level11_put_meta(px,py,2);
+    }
+  }
+
+  // Spawns.
+  level11_put_meta(2,3,3);
+  level11_put_meta(3,8,4);
+  level11_put_meta(12,5,5);
+  level11_put_meta(12,10,6);
+
+  // Clean attributes: mostly one stable palette, with only the exact gate quadrant grey/white.
+  vram_adr(NAMETABLE_A+0x03c0);
+  for(i=0;i<64;++i) vram_put(0x55);
+
+  // Gate at map x9,y6 -> nametable x18-19,y16-17 -> attr row 4, col 4, top-right quadrant.
+  vram_adr(NAMETABLE_A+0x03c0+4*8+4);
+  vram_put(0x5d);
+}
+
+
+// v163: Stage 14 side-room bomb test, lean.
+// Player must be the first spawn found during VRAM scan, so he stays index 0.
+void patch_level14_side_rooms(void)
+{
+  for(py=0;py<13;++py)
+  {
+    for(px=0;px<16;++px) level11_put_meta(px,py,0);
+  }
+
+  for(px=0;px<16;++px)
+  {
+    level11_put_meta(px,1,1);
+    level11_put_meta(px,11,1);
+  }
+
+  for(py=1;py<12;++py)
+  {
+    level11_put_meta(0,py,1);
+    level11_put_meta(15,py,1);
+    if(py!=6)
+    {
+      level11_put_meta(4,py,1);
+      level11_put_meta(11,py,1);
+    }
+  }
+
+  level11_put_meta(4,6,7);
+  level11_put_meta(11,6,7);
+
+  level11_put_meta(7,4,1);
+  level11_put_meta(8,4,1);
+  level11_put_meta(7,8,1);
+  level11_put_meta(8,8,1);
+  level11_put_meta(6,6,1);
+  level11_put_meta(9,6,1);
+
+  // Main arena chips.
+  for(px=5;px<11;++px)
+  {
+    if(px!=7 && px!=8)
+    {
+      level11_put_meta(px,3,2);
+      level11_put_meta(px,9,2);
+    }
+  }
+  for(py=5;py<8;++py)
+  {
+    level11_put_meta(5,py,2);
+    level11_put_meta(10,py,2);
+    level11_put_meta(13,py,2);
+  }
+
+  // v164: pack the whole starting chamber with chips, but leave player/slime/bomb cells open.
+  for(py=2;py<11;++py)
+  {
+    for(px=1;px<4;++px)
+    {
+      if((px==2 && py==3)||(px==3 && py==6)||(px==3 && py==8)) continue;
+      level11_put_meta(px,py,2);
+    }
+  }
+
+  level11_put_meta(2,3,3);   // player: first spawn in scan order
+  level11_put_meta(3,8,4);   // slime in same starting chamber
+  level11_put_meta(13,9,5);
+  level11_put_meta(8,10,6);
+
+  vram_adr(NAMETABLE_A+0x03c0);
+  for(i=0;i<64;++i) vram_put(0x55);
+  vram_adr(NAMETABLE_A+0x03c0+4*8+2);
+  vram_put(0x57);
+  vram_adr(NAMETABLE_A+0x03c0+4*8+5);
+  vram_put(0x5d);
+}
 
 //the main gameplay code
 
@@ -1709,8 +1948,8 @@ void game_loop(void)
 {
   oam_clear();
 
-  // v109: 50 stages now use 11 physical layouts in rotation.
-  // Stage 11 is unique; later builds can keep adding more unique maps.
+  // v158: 50 stages use 14 layouts in rotation.
+  // Stage 14 is runtime-patched from the safe bomb-gate base to avoid PRG overflow.
   i=(game_level%LEVEL_LAYOUTS)<<1;
 
   vram_adr(NAMETABLE_A);
@@ -1719,7 +1958,11 @@ void game_loop(void)
   // v121: Stage 11 patch uses temp variables internally, so preserve the levelList index.
   // Losing this value corrupts the palette selection and causes the weird colors after retries.
   level_patch_save_i=i;
-  if((game_level%LEVEL_LAYOUTS)==10) patch_level11_bomb_gate();
+  j=game_level%LEVEL_LAYOUTS;
+  if(j==10) patch_level11_bomb_gate();
+  else if(j==11) patch_level12_big_safe();
+  else if(j==12) patch_level13_dead_end_gate();
+  else if(j==13) patch_level14_side_rooms(); // v159: real compact Stage 14 side rooms
   i=level_patch_save_i;
 
   vram_adr(NAMETABLE_A+0x0042);
@@ -1729,7 +1972,7 @@ void game_loop(void)
 
   pal_bg(levelList[i+1]);             //set up background palette
   // v126: Stage 11 uses BG palette 3 as a grey/white marker for the bomb gate.
-  if((game_level%LEVEL_LAYOUTS)==10)
+  j=game_level%LEVEL_LAYOUTS;if(j>=10&&j<=13)
   {
     pal_col(13,0x00);
     pal_col(14,0x10);
@@ -1839,6 +2082,9 @@ void game_loop(void)
 
   // v117: start Stage 11 with one bomb so the bomb-gate chip path can be tested.
   if((game_level%LEVEL_LAYOUTS)==10) spawn_glitch_bomb(MAP_ADR(4,6));
+  if((game_level%LEVEL_LAYOUTS)==11) spawn_glitch_bomb(MAP_ADR(3,8));
+  if((game_level%LEVEL_LAYOUTS)==12) spawn_glitch_bomb(MAP_ADR(4,8));
+  if((game_level%LEVEL_LAYOUTS)==13) spawn_glitch_bomb(MAP_ADR(3,6));
 
   // v78: Add a 4th late-game Nightmare Slime, but not too early.
   // It now starts from Stage 31 onward instead of Stage 21, and it is slower.
@@ -1896,21 +2142,21 @@ void game_loop(void)
       // no new tiles and no CHR movement.
       // OAM budget: 4 icons = 16 sprites, text = 46 sprites, total = 62.
       spr=draw_oam_text(104,32,pauseStr,6,0,spr);
-      spr=draw_oam_text(88,56,pauseLegendStr,10,0,spr);
+      spr=draw_oam_text(88,56,pauseLegendStr,5,0,spr);
 
       spr=oam_meta_spr(64,80,spr,sprOrb);
-      spr=draw_oam_text(88,84,pauseFreezeStr,6,0,spr);
+      spr=draw_oam_text(88,84,pauseFreezeStr,3,0,spr);
 
       spr=oam_meta_spr(64,104,spr,sprLightningOrb);
       spr=draw_oam_text(88,108,pauseZapStr,3,0,spr);
 
       spr=oam_meta_spr(64,128,spr,sprSkullOrb);
-      spr=draw_oam_text(88,132,pauseClearStr,5,0,spr);
+      spr=draw_oam_text(88,132,levelClearStr,5,0,spr);
 
-      spr=oam_meta_spr(64,152,spr,sprCodeChipGlow);
+      spr=oam_meta_spr(64,152,spr,sprCodeChip);
       spr=draw_oam_text(88,156,pauseChipStr,4,0,spr);
 
-      spr=draw_oam_text(80,188,pauseUseDashStr,12,0,spr);
+      spr=draw_oam_text(80,188,pauseUseDashStr,7,0,spr);
 
       oam_hide_rest(spr);
     }
@@ -2044,7 +2290,7 @@ void game_loop(void)
       {
         //Restore the current level palettes when returning to play.
         pal_bg(levelList[((game_level%LEVEL_LAYOUTS)<<1)+1]);
-        if((game_level%LEVEL_LAYOUTS)==10)
+        j=game_level%LEVEL_LAYOUTS;if(j>=10&&j<=13)
         {
           pal_col(13,0x00);
           pal_col(14,0x10);
@@ -2217,6 +2463,10 @@ void game_loop(void)
 
     if(items_collected==items_count)
     {
+      // v146b: remove any harmless leftover sprite chips before the clear delay.
+      for(ptr=0;ptr<CHIP_MAX;++ptr) chip_active[ptr]=FALSE;
+      oam_clear();
+
       add_score(SCORE_LEVEL);
       // v88: restore original music data for clear jingle/screen music.
       famitone_init(&music_data);
@@ -2381,9 +2631,12 @@ void game_loop(void)
             //when the player reaches the same 16x16 map cell.
             for(ptr=0;ptr<CHIP_MAX;++ptr)
             {
+              // v146b: bounding-box pickup prevents rare stranded/rogue chip sprites.
               if(chip_active[ptr]&&
-                 chip_x[ptr]==(player_x[0]>>(FP_BITS))&&
-                 chip_y[ptr]==(player_y[0]>>(FP_BITS)))
+                 !(((player_x[0]>>FP_BITS)+12)<chip_x[ptr]||
+                   (player_x[0]>>FP_BITS)>(chip_x[ptr]+12)||
+                   ((player_y[0]>>FP_BITS)+12)<chip_y[ptr]||
+                   (player_y[0]>>FP_BITS)>(chip_y[ptr]+12)))
               {
                 chip_active[ptr]=FALSE;
                 sfx_play(SFX_ITEM,2);
