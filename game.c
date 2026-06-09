@@ -7,9 +7,8 @@
 // - Full Retro Replay visual retheme with new title screen, HUD, sprites, and palettes.
 // - 50-stage structure using 14 layouts; Level 14 micro fit test.
 // - Testing-only title-screen level select is enabled in this build.
-// - GET READY countdown before each stage.
 // - Level clear, well done, game over, score, lives, items, power HUD, and high score screens.
-// - Pause screen with power-up legend and Retro-Replay.com branding.
+// - Pause screen.
 // - New enemy slime art with multiple colors, late-game Nightmare Slime, and speed/aggression scaling.
 // - Power-up system with Frozen Disk, Lightning Disk, Skull Clear, and B-button dash boost.
 // - Testing-only Glitch Bomb mechanic: B picks up/drops stable fuse-flash bombs; otherwise B dashes.
@@ -409,34 +408,18 @@ void put_score_num(unsigned int adr,unsigned int num);
 // Pause overlay text, drawn with sprites so gameplay nametable stays untouched.
 // Uses the built-in tile font mapping: A=0x21, space=0x00, '-'=0x0d, '.'=0x0e.
 const unsigned char pauseStr[6]={0x30,0x21,0x35,0x33,0x25,0x24}; //PAUSED
+// v170: restored lean pause legend. Important gameplay help, but reuses existing sprites/text.
+const unsigned char pauseLegendStr[5]={0x30,0x2f,0x37,0x25,0x32}; //POWER
+const unsigned char pauseFreezeStr[3]={0x29,0x23,0x25}; //ICE
+const unsigned char pauseZapStr[3]={0x3a,0x21,0x30}; //ZAP
+const unsigned char pauseChipStr[4]={0x23,0x28,0x29,0x30}; //CHIP
+// v171: full pause controls text: A: USE B: DASH
+const unsigned char pauseUseDashStr[14]={0x21,0x1a,0x00,0x35,0x33,0x25,0x00,0x22,0x1a,0x00,0x24,0x21,0x33,0x28}; //A: USE B: DASH
 // v161: removed unused pauseResumeStr to save 14 PRG bytes.
 // v160: pause URL reuses gameOverUrlStr to save 16 ROM bytes.
 
-// v80 pause power legend. Text is sprite-drawn; no CHR changes.
-// Tile font mapping: A=0x21, B=0x22 ... Z=0x3a, space=0x00.
-const unsigned char pauseLegendStr[5]={0x30,0x2f,0x37,0x25,0x32}; //POWER v166: shorter to save PRG
-const unsigned char pauseFreezeStr[3]={0x29,0x23,0x25}; //ICE v166: shorter to save PRG
-const unsigned char pauseZapStr[3]={0x3a,0x21,0x30}; //ZAP
-// v160: pause CLEAR text reuses levelClearStr to save 5 ROM bytes.
-const unsigned char pauseChipStr[4]={0x23,0x28,0x29,0x30}; //CHIP
-const unsigned char pauseUseDashStr[7]={0x21,0x00,0x35,0x33,0x25,0x00,0x22}; //A USE B v166: shorter to save PRG
 
 // v167 ROM save: removed title STG label; tiny digits remain.
-
-//large 1-5 numbers nametable definitons, 2x3 tiles each
-//numbers were drawn one next to the other in NES Screen Tool,
-//then that part of nametable was copy/pasted here with Shift+C
-//here they are orderded as
-//   top row of 11 22 33 44 55
-//middle row of 11 22 33 44 55
-//bottom row of 11 22 33 44 55
-
-const unsigned char largeNums[10*3]={
-  0x7a,0x7b,0x7c,0x7d,0x7c,0x7d,0x7e,0x7f,0x80,0x81,
-  0x86,0x7b,0x87,0x88,0x89,0x8a,0x8b,0x8c,0x8d,0x7d,
-  0x90,0x91,0x92,0x93,0x94,0x95,0x96,0x7f,0x94,0x95
-};
-
 
 // v58: 3x5 block-digit font for true big level numbers 01-50.
 // Uses an existing blue LEVEL-screen tile so we do not need new CHR art.
@@ -679,23 +662,6 @@ void pal_fade_to(unsigned to)
 
 
 
-//draw a small sprite text string using the built-in font tiles
-
-unsigned char oam_text(unsigned char x,unsigned char y,const unsigned char* str,unsigned char len,unsigned char sprid,unsigned char attr)
-{
-  while(len)
-  {
-    if(*str) sprid=oam_spr(x,y,*str,attr,sprid);
-    x+=8;
-    ++str;
-    --len;
-  }
-
-  return sprid;
-}
-
-
-
 //show title screen
 
 void title_screen(void)
@@ -739,17 +705,8 @@ void title_screen(void)
 
     scroll(0,iy>>FP_BITS);
 
-    // Little title-screen parade: the horn guy runs across with slimes chasing.
-    // v27 safe title fix: keep the known-working title tiles, but move the parade lower
-    // so the sprites do not walk through the words.
+    // v168 ROM save: removed decorative title parade.
     spr=0;
-    i=frame_cnt<<1;
-    py=198+((frame_cnt&8)>>3);
-    spr=oam_meta_spr(i,py,spr,sprPlayer);
-    spr=oam_meta_spr(i-44,py+1,spr,sprEnemy1);
-    spr=oam_meta_spr(i-78,py+2,spr,sprEnemy2);
-    spr=oam_meta_spr(i-112,py+1,spr,sprEnemy3);
-
     // v167 ROM save: keep tiny test level select, but remove label/up/down/select code.
     // LEFT/RIGHT changes one stage. START begins on displayed stage.
     spr=oam_spr(120,216,0x10+(start_level+1)/10,0,spr);
@@ -931,94 +888,12 @@ void show_level_clear(unsigned char num)
   pal_fade_to(4);
   music_play(MUSIC_CLEAR);
 
-  //Quick parade during the same short wait: horn guy and slimes sprint by.
-  frame_cnt=0;
-  while(frame_cnt<96)
-  {
-    ppu_wait_frame();
-
-    //Flash the blue text color a little so the score/splash feels alive.
-    pal_col(2,(frame_cnt&8)?0x21:0x11);
-
-    spr=0;
-    i=(frame_cnt<<2);
-    py=196+((frame_cnt&4)>>2);
-    spr=oam_meta_spr(i,py,spr,sprPlayer);
-    spr=oam_meta_spr(i-34,py+1,spr,sprEnemy1);
-    spr=oam_meta_spr(i-60,py+2,spr,sprEnemy2);
-    spr=oam_meta_spr(i-86,py+1,spr,sprEnemy3);
-    oam_hide_rest(spr);
-
-    ++frame_cnt;
-  }
+  // v168 ROM save: removed decorative clear-screen parade.
+  delay(70);
 
   pal_fade_to(0);
 }
 
-
-
-//show a short GET READY 3-2-1 countdown before gameplay starts
-//Uses the same large number tile set as the level intro screen.
-void show_ready_countdown(void)
-{
-  scroll(-4,0); //match the level intro alignment
-
-  //Play a small count-in on a clean black screen so the message is readable.
-  for(wait=3;wait>0;--wait)
-  {
-    ppu_off();
-    oam_clear();
-
-    vram_adr(NAMETABLE_A);
-    vram_fill(0,1024);
-
-    //GET READY!
-    vram_adr(NAMETABLE_A+0x00ea);
-    vram_write((unsigned char*)nextLevelStr,6);
-
-    //large countdown number centered below it
-    j=(wait-1)<<1;
-    i16=NAMETABLE_A+0x014f;
-    for(i=0;i<3;++i)
-    {
-      vram_adr(i16);
-      vram_put(largeNums[j]);
-      vram_put(largeNums[j+1]);
-      j+=10;
-      i16+=32;
-    }
-
-    //small brand mark at the bottom
-    vram_adr(NAMETABLE_A+0x0328);
-    vram_write((unsigned char*)gameOverUrlStr,16);
-
-    pal_bg(palGame1);
-    pal_spr(palGameSpr);
-    pal_col(2,0x21);
-    pal_col(3,0x30);
-    ppu_on_all();
-    pal_bright(4);
-
-    sfx_play(SFX_START,0);
-    delay(45);
-  }
-
-  //Tiny GO flash so the transition feels responsive, but keeps the countdown short.
-  ppu_off();
-  vram_adr(NAMETABLE_A);
-  vram_fill(0,1024);
-  vram_adr(NAMETABLE_A+0x01cd);
-  vram_put(0x27); //G
-  vram_put(0x2f); //O
-  vram_put(0x01); //!
-  vram_adr(NAMETABLE_A+0x0328);
-  vram_write((unsigned char*)gameOverUrlStr,16);
-  ppu_on_all();
-  sfx_play(SFX_START,0);
-  delay(20);
-
-  pal_fade_to(0);
-}
 
 
 //set up a move in the specified direction if there is no wall
@@ -2135,12 +2010,8 @@ void game_loop(void)
 
     if(game_paused)
     {
-      // Pause overlay: hide gameplay sprites to keep the message clean and avoid OAM overflow.
+      // v170: restored pause legend in a compact form. Uses existing metasprites and text only.
       spr=0;
-
-      // v80: Power-up legend. Uses existing metasprites only;
-      // no new tiles and no CHR movement.
-      // OAM budget: 4 icons = 16 sprites, text = 46 sprites, total = 62.
       spr=draw_oam_text(104,32,pauseStr,6,0,spr);
       spr=draw_oam_text(88,56,pauseLegendStr,5,0,spr);
 
@@ -2156,8 +2027,7 @@ void game_loop(void)
       spr=oam_meta_spr(64,152,spr,sprCodeChip);
       spr=draw_oam_text(88,156,pauseChipStr,4,0,spr);
 
-      spr=draw_oam_text(80,188,pauseUseDashStr,7,0,spr);
-
+      spr=draw_oam_text(72,188,pauseUseDashStr,14,0,spr);
       oam_hide_rest(spr);
     }
     else
@@ -2765,6 +2635,42 @@ void game_loop(void)
 }
 
 
+// v169: restore the 3-2-1 READY countdown, but keep it lean.
+// It reuses the existing big level-number font instead of adding the old extra number table back.
+void show_ready_countdown(void)
+{
+  scroll(-4,0);
+
+  for(wait=3;wait>0;--wait)
+  {
+    ppu_off();
+    oam_clear();
+
+    vram_adr(NAMETABLE_A);
+    vram_fill(0,1024);
+
+    vram_adr(NAMETABLE_A+0x00ea);
+    vram_write((unsigned char*)nextLevelStr,6);
+
+    // Big 03, 02, 01 using the existing 3x5 number drawing routine.
+    put_big_level_num(NAMETABLE_A+0x014c,wait);
+    put_big_level_num_purple_attrs();
+
+    pal_bg(palGame1);
+    pal_spr(palGameSpr);
+    pal_col(2,0x21);
+    pal_col(3,0x30);
+    ppu_on_all();
+    pal_bright(4);
+
+    sfx_play(SFX_START,0);
+    delay(45);
+  }
+
+  pal_fade_to(0);
+}
+
+
 
 //this is where the program starts
 extern const void sound_data[];
@@ -2792,7 +2698,6 @@ void main(void)
     {
       show_screen(game_level);
       show_ready_countdown();
-
       game_loop();
 
       // v88: make sure screen music uses original multi-song music data.
